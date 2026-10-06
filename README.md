@@ -444,6 +444,27 @@ npm publish --otp=123456
 npm view dsh-wallport version     # 确认已上线
 ```
 
+**⚠️ npm 11 的分阶段发布（staged publishing）**：开了 2FA 的账号执行 `npm publish` 时，
+npm 可能不直接上线，而是先在包名下落一个 `0.0.0-stage` 占位版本，把真正的版本放进待批准队列：
+
+```bash
+npm stage list                     # 看队列
+npm stage view <stage-id>          # 看详情（含 shasum / access / status）
+npm stage approve <stage-id>       # 批准 → 2FA 就在这一步，批准后即上线
+npm stage reject <stage-id>        # 放弃
+```
+
+也可以不带 2FA 先上传、再把 2FA 留到批准那一下：
+
+```bash
+npm stage publish                  # 只需要登录态，不需要 2FA
+npm stage approve <stage-id>       # 这一步需要 2FA
+```
+
+**版本号烧掉规则**：一个版本号只要进过 registry（哪怕只是被 stage、最后被 reject 或超时），
+就不能再用——重新 stage 会报 `Cannot stage previously published version`。
+遇到这种情况**换一个新版本号**（例如 0.2.0 被占用就发 0.2.1）再走一遍。
+
 **B. 交给 CI 发（一次设置，之后只需打标签）**：仓库自带 `.github/workflows/publish.yml`
 
 1. npm 网站 → Access Tokens → **Generate New Token → Granular Access Token**，
