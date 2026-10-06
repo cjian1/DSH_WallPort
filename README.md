@@ -419,17 +419,33 @@ git push                 # CI（.github/workflows/checks.yml）会自动跑同�
 
 **发到 npm（让「填包名安装」成立）**。清单已经按 npm 发布要求准备好：没有 `private`、
 带 `publishConfig.access: "public"`、`files` 覆盖了运行时需要的全部文件（33 个文件，70 KB）。
-包名 `dsh-boot-animation` 目前未被占用，登录你自己的 npm 账号后发一次即可：
+包名 `dsh-boot-animation` 目前未被占用。
+
+> ⚠️ 账号开了 2FA（auth-and-writes）时，`npm publish` 会报
+> `E403 ... Two-factor authentication or granular access token with bypass 2fa enabled is required`。
+> 两条路任选：
+
+**A. 本地发（最快）**：带上验证器里的 6 位码
 
 ```bash
-npm login          # 浏览器/一次性密码登录你自己的 npm 账号
-npm publish        # 在仓库根目录执行
-npm view dsh-boot-animation     # 确认已上线
+npm publish --otp=123456
+npm view dsh-boot-animation version     # 确认已上线
 ```
+
+**B. 交给 CI 发（一次设置，之后只需打标签）**：仓库自带 `.github/workflows/publish.yml`
+
+1. npm 网站 → Access Tokens → **Generate New Token → Granular Access Token**，
+   勾选 **Bypass 2FA**，权限选 **Read and write**；
+2. GitHub 仓库 → Settings → Secrets and variables → Actions → 新建 secret `NPM_TOKEN`，粘贴该 token；
+3. 推一个标签即可发布（工作流会先跑测试、校验标签与 `package.json` 版本一致、拒绝重复发版）：
+
+   ```bash
+   git tag v0.1.2 && git push origin v0.1.2
+   ```
 
 发完别人就能在 Plugins → **Add plugin** 里直接填 `dsh-boot-animation`（或
 `plugin_manager(action:"install_bundle", target:"dsh-boot-animation")`）。
-以后发新版本：改 `version` + 补 CHANGELOG，再 `npm publish` 一次。
+以后发新版本：改 `version` + 补 CHANGELOG → 打新标签。
 
 在发布之前，`npm pack` 出来的 tarball 可以直接验证安装效果（等价于 registry 那一份）：
 
