@@ -24,7 +24,10 @@ jobs:
       # 其中两项「一致性测试」需要本机装有 DSH（读它的 app.asar）；
       # 在 CI 上它们会自动 skip，而不是失败。DSH_ASAR 可以指定安装路径。
       - name: Tests
-        run: node --test test/
+        # 不要写成 `node --test test/`：Node 20/22/24 对目录参数的处理不一致
+        # （22/24 会把 `test` 当成模块去 require，直接 MODULE_NOT_FOUND）。
+        # 不带参数时按默认测试文件匹配规则递归查找，各版本一致。
+        run: npm test
 
       - name: Docs check (README links, template list, test count)
         run: node tools/check-docs.mjs

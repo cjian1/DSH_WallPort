@@ -37,7 +37,7 @@
     }
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "check": "node tools/syntax-check.mjs",
     "check:docs": "node tools/check-docs.mjs",
     "check:all": "node tools/syntax-check.mjs && node --test test/ && node tools/check-docs.mjs",

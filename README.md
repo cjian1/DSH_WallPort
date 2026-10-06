@@ -286,7 +286,7 @@ POST /dsh-boot-animation-7f3a/api/remove             删自定义模板
 ## 开发
 
 ```bash
-npm test                  # 32 个测试（node --test test/）
+npm test                  # 32 个测试（等价于 `node --test`，不带目录参数）
 npm run check             # 全量语法检查
 npm run check:docs        # README 链接 / 模板清单 / 测试数量自检
 npm run check:all         # 上面三件事一起跑（CI 跑的就是它）
