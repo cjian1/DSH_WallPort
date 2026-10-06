@@ -36,7 +36,7 @@ function readTemplateFile(path) {
   return normalizeTemplate({ ...raw, id: raw.id ?? basename(path, '.json') }, { requireDocument: true })
 }
 
-/** 读一个模板目录（$DSH_HOME/dsh-boot-animation/templates 的格式）。 */
+/** 读一个模板目录（$DSH_HOME/dsh-wallport/templates 的格式）。 */
 function readTemplateDir(dir) {
   return readdirSync(dir)
     .filter((name) => name.endsWith('.json'))

@@ -63,7 +63,7 @@ export function bootOverlayRuntime(cfg) {
     if (!host) {
       host = document.createElement('div')
       host.id = overlayId
-      host.setAttribute('data-dsh-boot-animation', cfg.templateId || '')
+      host.setAttribute('data-dsh-wallport', cfg.templateId || '')
       ;(document.body || document.documentElement).appendChild(host)
     }
     host.setAttribute('aria-hidden', 'true')
@@ -164,7 +164,7 @@ export function bootOverlayRuntime(cfg) {
     if (wait > 0) window.setTimeout(leave, wait)
     else leave()
     if (window.console && window.console.debug) {
-      window.console.debug('[dsh-boot-animation] overlay finished:', reason, Math.round(elapsed) + 'ms')
+      window.console.debug('[dsh-wallport] overlay finished:', reason, Math.round(elapsed) + 'ms')
     }
   }
 
@@ -226,7 +226,7 @@ export function bootOverlayRuntime(cfg) {
         if (data.changed === true && typeof data.document === 'string' && frame !== null) {
           doc = data.document
           frame.setAttribute('srcdoc', doc)
-          if (window.console && window.console.debug) window.console.debug('[dsh-boot-animation] 热切换到模板', data.id)
+          if (window.console && window.console.debug) window.console.debug('[dsh-wallport] 热切换到模板', data.id)
         }
       })
       .catch(function () {

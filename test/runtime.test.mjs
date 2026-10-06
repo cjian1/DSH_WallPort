@@ -81,7 +81,7 @@ const documentMock = {
   },
 }
 
-/** 重置出一套干净的假文档：<body><div id="root"></div><div id="dsh-boot-animation"></div></body> */
+/** 重置出一套干净的假文档：<body><div id="root"></div><div id="dsh-wallport"></div></body> */
 function setupDom() {
   documentMock.all = []
   documentMock.body = new FakeElement('body')
@@ -239,7 +239,7 @@ test('没有原生启动视图时按兜底时长退出', async () => {
 test('页面加载时与宿主核对，模板变了就热切换', async () => {
   const calls = []
   const overlay = runOverlay(
-    { api: '/dsh-boot-animation-7f3a/api', rev: 'test-template-deadbeef', maxDurationMs: 800 },
+    { api: '/dsh-wallport-7f3a/api', rev: 'test-template-deadbeef', maxDurationMs: 800 },
     {
       fetchImpl: jsonFetch(
         {
@@ -267,7 +267,7 @@ test('页面加载时与宿主核对，模板变了就热切换', async () => {
 
 test('宿主说动画已关闭时立即让路', async () => {
   const overlay = runOverlay(
-    { api: '/dsh-boot-animation-7f3a/api', rev: 'test-template-deadbeef' },
+    { api: '/dsh-wallport-7f3a/api', rev: 'test-template-deadbeef' },
     {
       fetchImpl: jsonFetch({
         rev: 'test-template-deadbeef',
@@ -287,7 +287,7 @@ test('宿主说动画已关闭时立即让路', async () => {
 
 test('核对请求失败也不影响动画退出', async () => {
   const overlay = runOverlay(
-    { api: '/dsh-boot-animation-7f3a/api', rev: 'test-template-deadbeef' },
+    { api: '/dsh-wallport-7f3a/api', rev: 'test-template-deadbeef' },
     { fetchImpl: () => Promise.reject(new Error('offline')) },
   )
   await sleep(1200)

@@ -2,6 +2,20 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)；日期为本地时间。
 
+## 0.2.0 — 2026-10-06
+
+**统一命名为 DSH_WallPort**
+
+- 展示名处处统一为 **DSH_WallPort**：仓库、README、插件卡片标题（`meta.title` 与语言包）、
+  启动日志、图标说明。
+- 机器标识改为全小写的 **`dsh-wallport`**：npm 包名 / DSH 插件行名 / 浏览器模块 id /
+  覆层 DOM id / HTTP 路由前缀（`/dsh-wallport-7f3a`）/ 状态目录。大写包名会被 npm 拒绝，
+  DSH 的 `parseInstallSpec()` 也只接受 `[a-z0-9._~-]`，所以这是唯一两边都能用的写法。
+- **状态自动迁移**：首次启动时把 `$DSH_HOME/dsh-boot-animation/` 整棵拷贝到
+  `$DSH_HOME/dsh-wallport/`（拷贝而非移动），自定义模板与当前设置不丢。
+- 因为包名变了，装过 0.1.x 的 profile 需要卸载重装一次。
+- 文档：README 增加「从旧名字升级」一节与命名说明；本地目录名也改成 `DSH_WallPort`。
+
 ## 0.1.2 — 2026-10-05
 
 **一键安装（复制链接即可）**
@@ -54,4 +68,4 @@
 - **安全的退出条件**：应用挂载、点击跳过、超时兜底、启动报错让路；覆层平时 `pointer-events:none`。
 - **两种承载**：`dsh web` 与桌面 App（`dsh-app://`）走同一张注入表；桌面模式下用
   `/api/active?rev=…` 做一次同源核对，让「换模板 → 刷新」立即生效。
-- 状态持久化在 `$DSH_HOME/dsh-boot-animation/`，目录不可写时退回内存。
+- 状态持久化在 `$DSH_HOME/dsh-wallport/`，目录不可写时退回内存。

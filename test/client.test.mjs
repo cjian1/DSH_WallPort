@@ -23,14 +23,14 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const source = readFileSync(join(root, 'client.js'), 'utf8')
-const NS = 'dsh-boot-animation'
+const NS = 'dsh-wallport'
 
 const SNAPSHOT = {
   settings: { enabled: true, minDurationMs: 1200, maxDurationMs: 12000, skippable: true },
   active: 'deepseek-pulse',
   enabled: true,
   degraded: false,
-  baseDir: '/tmp/dsh-boot-animation',
+  baseDir: '/tmp/dsh-wallport',
   templates: [
     {
       id: 'deepseek-pulse',

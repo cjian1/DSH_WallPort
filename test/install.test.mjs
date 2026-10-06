@@ -53,8 +53,8 @@ test('DSH 自己的 parseInstallSpec 接受 README 里写给用户的写法', { 
       ['/Users/me/DSH_WallPort', 'path', undefined],
       ['/Users/me/DSH_WallPort-0.1.1.tgz', 'tarball', undefined],
       ['https://example.com/DSH_WallPort-0.1.1.tgz', 'tarball', 'example.com'],
-      ['dsh-boot-animation', 'registry', undefined],
-      ['dsh-boot-animation@0.1.1', 'registry', undefined],
+      ['dsh-wallport', 'registry', undefined],
+      ['dsh-wallport@0.1.1', 'registry', undefined],
     ]
     for (const [spec, kind, host] of accepted) {
       const parsed = parseInstallSpec(spec)

@@ -1,5 +1,5 @@
 /**
- * dsh-boot-animation —— 宿主半侧入口（Cordis 插件）
+ * dsh-wallport —— 宿主半侧入口（Cordis 插件）
  *
  * 职责：
  *   1. 把「当前开机动画」编译成 DSH 启动页面的注入行
@@ -7,7 +7,7 @@
  *        桌面模式由前端 bootstrap 通过 IPC 拿到同一张表后再应用）；
  *   2. 注册设置页/工具用的 HTTP 路由（同源，web 与桌面两种承载都可达）；
  *   3. 注册 6 个 Agent 工具，让「用 AI 自定义开机动画」可以真的落地；
- *   4. 维护状态：$DSH_HOME/dsh-boot-animation/{state.json,templates/}。
+ *   4. 维护状态：$DSH_HOME/dsh-wallport/{state.json,templates/}。
  *
  * 与 DSH 原生启动画面的关系：
  *   我们不改 DSH 的启动 DOM（`[data-dsh-boot]`），只是在最上面盖一层自己的动画，
@@ -15,13 +15,13 @@
  *   应用挂载（启动视图消失）后覆层淡出；启动失败文案出现时立刻让路。
  */
 
-import { DEFAULTS, DURATION_RANGE, ROUTE_PREFIX } from './src/shared/constants.js'
+import { DEFAULTS, DISPLAY_NAME, DURATION_RANGE, ROUTE_PREFIX } from './src/shared/constants.js'
 import { createApiHandler } from './src/host/api.js'
 import { createBootAnimationService } from './src/host/service.js'
 import { registerTools } from './src/host/tools.js'
 
 /** Loader 行身份。 */
-export const name = 'dsh-boot-animation'
+export const name = 'dsh-wallport'
 
 /**
  * 只有 webServer 是硬依赖（没有它就没有启动页面可注入）；
@@ -43,7 +43,7 @@ function normalizeConfig(config, logger) {
     if (value === undefined) return fallback
     const n = Number(value)
     if (!Number.isFinite(n) || n < DURATION_RANGE.min || n > DURATION_RANGE.max) {
-      logger?.warn?.(`[dsh-boot-animation] config.${field}=${JSON.stringify(value)} 非法，改用 ${fallback}`)
+      logger?.warn?.(`[dsh-wallport] config.${field}=${JSON.stringify(value)} 非法，改用 ${fallback}`)
       return fallback
     }
     return Math.round(n)
@@ -51,7 +51,7 @@ function normalizeConfig(config, logger) {
   const bool = (value, fallback, field) => {
     if (value === undefined) return fallback
     if (typeof value !== 'boolean') {
-      logger?.warn?.(`[dsh-boot-animation] config.${field}=${JSON.stringify(value)} 非布尔值，改用 ${fallback}`)
+      logger?.warn?.(`[dsh-wallport] config.${field}=${JSON.stringify(value)} 非布尔值，改用 ${fallback}`)
       return fallback
     }
     return value
@@ -90,7 +90,7 @@ export function apply(ctx, config) {
         if (!Array.isArray(table) || ref.service === undefined) return
         table.push(...ref.service.injectionRows())
       }),
-    'dsh-boot-animation: index injection',
+    'dsh-wallport: index injection',
   )
 
   // 2) HTTP 路由：设置页读写状态、预览文档。
@@ -102,13 +102,13 @@ export function apply(ctx, config) {
         handler: async (req, res) => {
           if (ref.api === undefined) {
             res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' })
-            res.end('{"error":"dsh-boot-animation 正在初始化"}\n')
+            res.end('{"error":"dsh-wallport 正在初始化"}\n')
             return
           }
           await ref.api(req, res)
         },
       }),
-    'dsh-boot-animation: http route',
+    'dsh-wallport: http route',
   )
 
   ready
@@ -117,7 +117,7 @@ export function apply(ctx, config) {
       ref.api = createApiHandler(service)
       const snapshot = service.snapshot()
       ctx.logger?.info?.(
-        `[dsh-boot-animation] 就绪：模板 ${snapshot.templates.length} 个，当前「${snapshot.active}」，` +
+        `[dsh-wallport] ${DISPLAY_NAME} 就绪：模板 ${snapshot.templates.length} 个，当前「${snapshot.active}」，` +
           `${snapshot.enabled ? '已启用' : '已关闭'}，状态目录 ${service.store.baseDir}`,
       )
 
@@ -129,19 +129,19 @@ export function apply(ctx, config) {
             try {
               const count = registerTools(toolCtx, service)
               if (disposed) return () => {}
-              toolCtx.logger?.info?.(`[dsh-boot-animation] 工具注册完成：${count} 个`)
+              toolCtx.logger?.info?.(`[dsh-wallport] 工具注册完成：${count} 个`)
             } catch (error) {
-              toolCtx.logger?.warn?.(`[dsh-boot-animation] 工具注册失败：${error?.message ?? error}`)
+              toolCtx.logger?.warn?.(`[dsh-wallport] 工具注册失败：${error?.message ?? error}`)
             }
             return () => {
               disposed = true
             }
           },
-          'dsh-boot-animation: agent tools',
+          'dsh-wallport: agent tools',
         )
       })
     })
     .catch((error) => {
-      ctx.logger?.error?.(`[dsh-boot-animation] 初始化失败：${error?.stack ?? error}`)
+      ctx.logger?.error?.(`[dsh-wallport] 初始化失败：${error?.stack ?? error}`)
     })
 }

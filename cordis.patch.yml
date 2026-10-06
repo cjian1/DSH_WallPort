@@ -1,21 +1,21 @@
 # ============================================================================
-# dsh-boot-animation —— 把「开机动画」插件挂进 DSH 配置树
+# dsh-wallport —— 把「开机动画」插件挂进 DSH 配置树
 # ============================================================================
 #
 # 工作原理（和 dsh-pet 一样的 bundle 层）：
 #   - insert：往配置树里插入一行插件 entry；
-#   - name: 'dsh-boot-animation' 解析到本包入口 index.js（宿主半侧）；
+#   - name: 'dsh-wallport' 解析到本包入口 index.js（宿主半侧）；
 #   - package.json 里的 dsh.client 声明让同一个包同时被扫描为浏览器插件，
-#     由 DSH 模块系统提供 /plugins/dsh-boot-animation/client.js。
+#     由 DSH 模块系统提供 /plugins/dsh-wallport/client.js。
 #
 # config 里只放「部署默认值」：用户运行时改的开关/模板/时长存在
-# $DSH_HOME/dsh-boot-animation/state.json（设置页与 AI 工具都会写它），
+# $DSH_HOME/dsh-wallport/state.json（设置页与 AI 工具都会写它），
 # 这样切换开机动画不需要改 profile、也不需要重启。
 # ============================================================================
 
 - insert:
     - id: boot-animation
-      name: 'dsh-boot-animation'
+      name: 'dsh-wallport'
       config:
         enabled: true
         template: deepseek-pulse

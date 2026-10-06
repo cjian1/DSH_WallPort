@@ -90,7 +90,7 @@ test('shipped web renderer: 注入行渲染进 index.html', { skip: !available }
     })
     const html = renderIndexInjections(indexHtml, rows)
 
-    assert.ok(html.includes('<div id="dsh-boot-animation"'), `${template.id}: 覆层容器没有注入`)
+    assert.ok(html.includes('<div id="dsh-wallport"'), `${template.id}: 覆层容器没有注入`)
     assert.ok(html.includes('dshba-frame'), `${template.id}: 覆层样式没有注入`)
     assert.ok(html.includes('dshBootAnim'), `${template.id}: 运行时脚本没有注入`)
     assert.ok(html.includes('__DSH_BOOT_READY__'), `${template.id}: 启动就绪 tail 丢失`)
@@ -101,7 +101,7 @@ test('shipped web renderer: 注入行渲染进 index.html', { skip: !available }
     assert.equal(scriptCount, openCount, `${template.id}: script 标签数量不匹配（注入内容里出现了裸 </script）`)
 
     // 覆层必须出现在 </body> 之前
-    assert.ok(html.indexOf('<div id="dsh-boot-animation"') < html.lastIndexOf('</body>'), `${template.id}: 覆层位置异常`)
+    assert.ok(html.indexOf('<div id="dsh-wallport"') < html.lastIndexOf('</body>'), `${template.id}: 覆层位置异常`)
   }
 })
 
@@ -121,7 +121,7 @@ test('shipped desktop interpreter: 三种注入行都能被应用', { skip: !ava
 
     assert.equal(head.children.filter((node) => node.tag === 'style').length, 1, `${template.id}: style 行没有落进 head`)
     assert.equal(body.children.filter((node) => node.tag === 'script').length, 1, `${template.id}: script 行没有落进 body`)
-    assert.ok(String(body.html ?? '').includes('<div id="dsh-boot-animation"'), `${template.id}: html 行没有落进 body`)
+    assert.ok(String(body.html ?? '').includes('<div id="dsh-wallport"'), `${template.id}: html 行没有落进 body`)
   }
 })
 

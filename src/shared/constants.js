@@ -5,17 +5,23 @@
  * 因此单独放一个不依赖任何 DSH 包的文件里，两端都能安全导入。
  */
 
-/** 包名，同时是 Loader 行 id 与浏览器模块 id（__ModuleLoader__.load({ id })）。 */
-export const PLUGIN_ID = 'dsh-boot-animation'
+/** 展示名：仓库、README、插件卡片等处统一用它。 */
+export const DISPLAY_NAME = 'DSH_WallPort'
+
+/**
+ * 包名，同时是 Loader 行名与浏览器模块 id（__ModuleLoader__.load({ id })）。
+ * 必须是全小写：npm 不接受大写包名，DSH 的 parseInstallSpec 也只认 [a-z0-9._~-]。
+ */
+export const PLUGIN_ID = 'dsh-wallport'
 
 /** 注入到 <body> 里的开机覆层容器 id。 */
-export const OVERLAY_ID = 'dsh-boot-animation'
+export const OVERLAY_ID = 'dsh-wallport'
 
 /**
  * 插件自有 HTTP 路由前缀。
  * 带随机后缀是为了不和别的插件抢路径；桌面模式会把它转发给宿主进程。
  */
-export const ROUTE_PREFIX = '/dsh-boot-animation-7f3a'
+export const ROUTE_PREFIX = '/dsh-wallport-7f3a'
 
 /** 设置页调用的 JSON API 前缀。 */
 export const API_PREFIX = `${ROUTE_PREFIX}/api`
@@ -24,7 +30,7 @@ export const API_PREFIX = `${ROUTE_PREFIX}/api`
 export const STATE_VERSION = 1
 
 /** 覆层元素的 data 属性，供 CSS / 测试 / 模板 JS 选中。 */
-export const OVERLAY_ATTR = 'data-dsh-boot-animation'
+export const OVERLAY_ATTR = 'data-dsh-wallport'
 
 /** 模板 id 规则：小写字母数字与连字符，2–48 位。 */
 export const TEMPLATE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,47}$/

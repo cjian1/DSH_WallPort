@@ -1,7 +1,7 @@
 /**
  * 持久化：状态（开关 / 当前模板 / 时长）与自定义模板。
  *
- * 位置：`$DSH_HOME/dsh-boot-animation/`
+ * 位置：`$DSH_HOME/dsh-wallport/`
  *   - state.json          当前生效的设置（设置页与 AI 工具都写它）
  *   - templates/<id>.json 自定义（AI 生成 / 手写导入）的模板
  *
@@ -13,7 +13,7 @@
  *   （解析不到时依次退回 $DSH_HOME、~/.dsh）。
  */
 
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -41,9 +41,33 @@ async function resolveHome(explicit) {
   return process.env.DSH_HOME && process.env.DSH_HOME !== '' ? process.env.DSH_HOME : join(homedir(), '.dsh')
 }
 
-/** 默认状态目录：$DSH_HOME/dsh-boot-animation */
+/** 状态目录名（$DSH_HOME/dsh-wallport）。 */
+export const STATE_DIR_NAME = 'dsh-wallport'
+
+/** 项目改名前的旧目录名；老用户第一次跑新版时把状态搬过来。 */
+export const LEGACY_STATE_DIR_NAME = 'dsh-boot-animation'
+
+/** 默认状态目录：$DSH_HOME/dsh-wallport */
 export async function defaultBaseDir(home) {
-  return join(await resolveHome(home), 'dsh-boot-animation')
+  return join(await resolveHome(home), STATE_DIR_NAME)
+}
+
+/**
+ * 一次性迁移：把旧目录（dsh-boot-animation）整棵拷到新目录（dsh-wallport）。
+ * 只在新目录还不存在、且旧目录存在时做；是「拷贝」而不是「移动」，
+ * 这样万一旧版本进程还在跑，它也不会写到一半发现目录没了。
+ * @returns 迁移来源路径，或 undefined（不需要迁移）。
+ */
+export function migrateLegacyState(baseDir, home) {
+  if (typeof home !== 'string' || home === '') return undefined
+  const legacy = join(home, LEGACY_STATE_DIR_NAME)
+  try {
+    if (existsSync(baseDir) || !existsSync(legacy)) return undefined
+    cpSync(legacy, baseDir, { recursive: true })
+    return legacy
+  } catch {
+    return undefined
+  }
 }
 
 function clampNumber(value, { min, max, fallback }) {
@@ -69,12 +93,21 @@ export function normalizeSettings(input, defaults = DEFAULTS) {
 
 /**
  * 建一个状态仓。
- * @param options.dir - 显式目录（测试用）；省略时用 <home>/dsh-boot-animation。
+ * @param options.dir - 显式目录（测试用）；省略时用 <home>/dsh-wallport。
  * @param options.home - DSH home（宿主上下文提供的 dshHomePath 优先）。
  * @param options.defaults - 部署默认值（来自插件 config）。
  */
 export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {}) {
-  const baseDir = dir ?? (await defaultBaseDir(home))
+  let baseDir = dir
+  let migratedFrom
+  if (baseDir === undefined) {
+    const resolvedHome = await resolveHome(home)
+    baseDir = join(resolvedHome, STATE_DIR_NAME)
+    migratedFrom = migrateLegacyState(baseDir, resolvedHome)
+    if (migratedFrom !== undefined) {
+      logger?.info?.(`[dsh-wallport] 已把旧状态目录迁移过来：${migratedFrom} → ${baseDir}`)
+    }
+  }
   const statePath = join(baseDir, 'state.json')
   const templatesDir = join(baseDir, 'templates')
   /** 磁盘不可用时的内存兜底，保证本次进程内功能仍然完整。 */
@@ -82,7 +115,7 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
 
   const warn = (error) => {
     memory.degraded = true
-    logger?.warn?.(`[dsh-boot-animation] 状态目录不可写（${baseDir}）：${error?.message ?? error}`)
+    logger?.warn?.(`[dsh-wallport] 状态目录不可写（${baseDir}）：${error?.message ?? error}`)
   }
 
   function ensureDir() {
@@ -116,6 +149,8 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
     baseDir,
     statePath,
     templatesDir,
+    /** 旧目录迁移来源（没有迁移时为 undefined），日志与测试用。 */
+    migratedFrom,
 
     /** 当前生效设置（磁盘优先，读不到用默认值）。 */
     readSettings() {

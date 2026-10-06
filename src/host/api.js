@@ -63,7 +63,7 @@ export function createApiHandler(service) {
     const path = url.pathname
     try {
       if (path === `${ROUTE_PREFIX}/health`) {
-        sendJson(res, 200, { ok: true, plugin: 'dsh-boot-animation' })
+        sendJson(res, 200, { ok: true, plugin: 'dsh-wallport' })
         return
       }
       if (path === `${API_PREFIX}/state`) {

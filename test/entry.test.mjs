@@ -90,13 +90,13 @@ function callApi(handler, { method = 'GET', path, body }) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 test('入口 import + apply：注入行、路由、工具、配置兜底', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-boot-animation-entry-'))
+  const home = mkdtempSync(join(tmpdir(), 'dsh-wallport-entry-'))
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
   try {
     const module = await import('../index.js')
     assert.equal(typeof module.apply, 'function', 'index.js 必须导出 apply')
-    assert.equal(module.name, 'dsh-boot-animation')
+    assert.equal(module.name, 'dsh-wallport')
     assert.deepEqual(module.inject, ['webServer'])
 
     const ctx = fakeContext()
@@ -125,7 +125,7 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
     assert.equal(rows[0].kind, 'style')
     assert.equal(rows[1].kind, 'html')
     assert.equal(rows[2].kind, 'script')
-    assert.ok(rows[1].html.includes('id="dsh-boot-animation"'))
+    assert.ok(rows[1].html.includes('id="dsh-wallport"'))
     assert.ok(rows[2].text.includes('"maxDurationMs":6000'), '运行时脚本应带上 config 里的兜底时长')
     assert.ok(rows[2].text.includes('"skippable":false'), '运行时脚本应带上 config 里的 skippable')
 
@@ -166,7 +166,7 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
     assert.deepEqual(afterOff, [], '关闭后不应再注入任何行')
 
     // 非法配置只影响自己：回落到默认值并留下警告（换一个干净的 home，避免读到上面的状态）
-    const home2 = mkdtempSync(join(tmpdir(), 'dsh-boot-animation-entry2-'))
+    const home2 = mkdtempSync(join(tmpdir(), 'dsh-wallport-entry2-'))
     process.env.DSH_HOME = home2
     const ctx2 = fakeContext()
     module.apply(ctx2, { enabled: 'yes', minDurationMs: -5, maxDurationMs: 999999, template: 42 })

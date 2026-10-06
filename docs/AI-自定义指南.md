@@ -65,7 +65,7 @@ AI 接下来会（不需要你指导）：
 
 - **设置页里**：模板卡片点「预览」，弹窗里循环播放并模拟启动进度；
 - **独立文件**：AI 用 `boot_animation_preview` 导出的 HTML 文件，双击用浏览器打开即可
-  （路径通常在 `$DSH_HOME/dsh-boot-animation/previews/<id>.html`）；
+  （路径通常在 `$DSH_HOME/dsh-wallport/previews/<id>.html`）；
 - 不装插件也能看内置模板：在插件目录里跑 `node tools/preview.mjs --all`。
 
 ## 6. 生效时机（重要）
@@ -100,7 +100,7 @@ AI 接下来会（不需要你指导）：
 这类动画是纯 HTML/CSS/JS 写的，改起来很快：把你的意见说清楚让它改，或者先切回 `minimal-fade` 这类安静的模板。
 
 **会收集我的数据吗？**
-不会。模板与设置都存在本机 `$DSH_HOME/dsh-boot-animation/`，动画不联网。
+不会。模板与设置都存在本机 `$DSH_HOME/dsh-wallport/`，动画不联网。
 唯一的外部交互是你和 AI 的对话本身。
 
 **有安全风险吗？**

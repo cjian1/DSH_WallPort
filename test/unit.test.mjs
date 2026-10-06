@@ -4,7 +4,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -12,13 +12,13 @@ import test from 'node:test'
 import { createApiHandler } from '../src/host/api.js'
 import { composeInjectionRows, composePreviewDocument, injectBridge, overlayCss } from '../src/host/compose.js'
 import { createBootAnimationService } from '../src/host/service.js'
-import { createStore } from '../src/host/store.js'
+import { LEGACY_STATE_DIR_NAME, STATE_DIR_NAME, createStore } from '../src/host/store.js'
 import { BUILTIN_TEMPLATES } from '../src/host/templates/index.js'
 import { API_PREFIX, DEFAULTS, LIMITS, ROUTE_PREFIX } from '../src/shared/constants.js'
 import { asFullDocument, jsonForScript, normalizeTemplate, normalizeTemplateId } from '../src/shared/validate.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-boot-animation-test-'))
+  return mkdtempSync(join(tmpdir(), 'dsh-wallport-test-'))
 }
 
 const sample = (id = 'my-boot') => ({
@@ -109,6 +109,44 @@ test('状态仓：默认值、落盘、增删改', async () => {
   }
 })
 
+test('状态目录改名：旧目录（dsh-boot-animation）自动迁移，模板与设置不丢', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-wallport-home-'))
+  try {
+    // 造一份「旧版」状态目录
+    const legacy = join(home, LEGACY_STATE_DIR_NAME)
+    mkdirSync(join(legacy, 'templates'), { recursive: true })
+    writeFileSync(
+      join(legacy, 'state.json'),
+      JSON.stringify({ version: 1, enabled: true, template: 'legacy-boot', minDurationMs: 800, maxDurationMs: 5000, skippable: false }),
+    )
+    writeFileSync(
+      join(legacy, 'templates', 'legacy-boot.json'),
+      JSON.stringify({ id: 'legacy-boot', name: '旧模板', document: '<!doctype html><html><body>旧</body></html>' }),
+    )
+
+    const store = await createStore({ home })
+    assert.equal(store.migratedFrom, legacy, '应报告迁移来源')
+    assert.equal(store.baseDir, join(home, STATE_DIR_NAME))
+    assert.ok(existsSync(join(home, STATE_DIR_NAME, 'state.json')), '新目录应有 state.json')
+    // 设置与模板都搬过来了
+    const settings = store.readSettings()
+    assert.equal(settings.template, 'legacy-boot')
+    assert.equal(settings.skippable, false)
+    assert.equal(settings.minDurationMs, 800)
+    assert.equal(store.getTemplate('legacy-boot').name, '旧模板')
+    // 是拷贝不是移动：旧目录原样还在
+    assert.ok(existsSync(join(legacy, 'state.json')), '旧目录应保留')
+    assert.ok(existsSync(join(legacy, 'templates', 'legacy-boot.json')))
+
+    // 第二次启动不再重复迁移，且读到的是已迁移的内容
+    const again = await createStore({ home })
+    assert.equal(again.migratedFrom, undefined)
+    assert.equal(again.readSettings().template, 'legacy-boot')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('状态仓：目录不可写时退回内存而不是崩掉', async () => {
   const dir = tempDir()
   try {
@@ -174,7 +212,7 @@ test('注入行形状：style / html / script，且设置生效', () => {
   assert.equal(rows[1].kind, 'html')
   assert.equal(rows[1].placement, 'body')
   assert.equal(rows[2].kind, 'script')
-  assert.ok(rows[1].html.includes('id="dsh-boot-animation"'))
+  assert.ok(rows[1].html.includes('id="dsh-wallport"'))
   assert.ok(rows[2].text.includes('9000'), '运行时脚本应带上 maxDurationMs')
   assert.ok(rows[2].text.includes('"skippable":false'), '运行时脚本应带上 skippable')
   assert.ok(overlayCss({ theme: 'light' }).includes('#f7f4ec'))

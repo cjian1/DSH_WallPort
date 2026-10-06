@@ -16,8 +16,11 @@
 
 </div>
 
-> **命名说明**：仓库叫 **DSH_WallPort**，插件包名是 **`dsh-boot-animation`**（DSH 配置树里的行 id 为 `boot-animation`）。
-> 仓库名取自「Wall（开机画面）+ Port（把它接进 DSH）」，包名描述的是实现；两者指同一个东西。
+> **命名说明**：项目、仓库、插件卡片统一叫 **DSH_WallPort**；
+> 机器标识（npm 包名 / DSH 插件行名 / 浏览器模块 id）是全小写的 **`dsh-wallport`**——
+> npm 不接受大写包名，DSH 的 `parseInstallSpec()` 也只认 `[a-z0-9._~-]`，
+> 所以这是唯一能被两个注册表接受的写法（仓库里有测试盯着这条规则）。
+> 配置树里的插件行 id 是 `boot-animation`。
 
 ---
 
@@ -45,7 +48,7 @@ DSH_WallPort 是一个 DSH 插件，它把这段画面换成你选的动画：
 | 🖥️ **两种承载都支持** | 桌面 App（`dsh-app://`）与 `dsh web`（本机 HTTP）走同一张注入表 |
 | 🛟 **不会锁死界面** | 应用挂载即淡出；启动报错立刻让路；超时兜底；随处点击可跳过；平时 `pointer-events:none` |
 | 🧩 **模板即 HTML** | 一个模板 = 一段自包含 HTML，AI 能写、你能改、能单独预览 |
-| 🧪 **有验证** | 33 个测试，其中两项直接执行 DSH 自己的注入渲染代码 |
+| 🧪 **有验证** | 34 个测试，其中两项直接执行 DSH 自己的注入渲染代码 |
 
 ## 快速开始
 
@@ -72,7 +75,7 @@ DSH 侧边栏的 **Plugins** 页面自带 **Add plugin** 输入框，它接受 G
 | git+https / SSH | `git+https://…`、`git@github.com:cjian1/DSH_WallPort.git` | 私有仓库用 SSH |
 | tarball | `https://…/DSH_WallPort-0.1.2.tgz`，或本地 `/abs/x.tgz` | `pnpm pack` 出来的离线包 |
 | 本地目录 | `/Users/你/DSH_WallPort` | **必须绝对路径**，相对路径会被拒绝 |
-| npm 包名 | `dsh-boot-animation` | 已按 npm 发布要求打包好；`npm publish` 之后可直接填包名 |
+| npm 包名 | `dsh-wallport` | 已按 npm 发布要求打包好；`npm publish` 之后可直接填包名 |
 
 安装过程：DSH 先用 `git ls-remote` 探一次仓库连通性（默认 5 秒超时），再交给 pnpm 拉取。
 本插件**没有任何依赖、没有构建脚本**，所以不会弹「允许运行安装脚本」那一类确认；
@@ -185,7 +188,7 @@ AI 会调用 `boot_animation_list` → 写动画 → `boot_animation_save`（存
 ### 注入行怎么进页面
 
 插件通过官方注入表 `webserver/index-inject` 往启动页塞三行：一段 `<style>`、一个铺满全屏的
-`<div id="dsh-boot-animation">`、一段运行时 `<script>`。运行时创建 iframe 播放当前模板。
+`<div id="dsh-wallport">`、一段运行时 `<script>`。运行时创建 iframe 播放当前模板。
 
 | 承载 | 注入行怎么进页面 | 什么时候重新收集 |
 |---|---|---|
@@ -229,6 +232,15 @@ AI 会调用 `boot_animation_list` → 写动画 → `boot_animation_save`（存
 
 预览用 `sandbox="allow-scripts"`（不透明源）跑：模板动画照常播放，但读不到设置页的任何数据。
 
+## 从旧名字升级（0.1.x → 0.2.0）
+
+0.2.0 把包名从 `dsh-boot-animation` 改成 `dsh-wallport`、展示名统一为 **DSH_WallPort**，
+状态目录也随之变成 `$DSH_HOME/dsh-wallport/`。插件在第一次启动时会**自动把旧目录整棵拷过来**
+（`$DSH_HOME/dsh-boot-animation/` → `$DSH_HOME/dsh-wallport/`，是拷贝不是移动），
+所以自定义模板与当前设置不会丢。旧目录可以自行删除。
+
+装插件的地方需要重装一次（包名变了）：先把旧的卸掉，再按上面的链接/包名装新的。
+
 ## 生效时机
 
 | 动作 | 什么时候看到 |
@@ -240,7 +252,7 @@ AI 会调用 `boot_animation_list` → 写动画 → `boot_animation_save`（存
 ## 数据与文件
 
 ```
-$DSH_HOME/dsh-boot-animation/
+$DSH_HOME/dsh-wallport/
 ├── state.json            # enabled / template / minDurationMs / maxDurationMs / skippable
 ├── templates/<id>.json   # 自定义模板（AI 生成或手动导入）
 └── previews/<id>.html    # boot_animation_preview 导出的预览
@@ -253,12 +265,12 @@ $DSH_HOME/dsh-boot-animation/
 插件还提供同源 JSON 接口（供设置页使用，也可自己脚本化）：
 
 ```text
-GET  /dsh-boot-animation-7f3a/api/state              设置 + 模板列表
-GET  /dsh-boot-animation-7f3a/api/active?rev=…       当前生效模板（页面加载时核对用）
-GET  /dsh-boot-animation-7f3a/api/preview?id=…       独立预览文档（text/html）
-POST /dsh-boot-animation-7f3a/api/settings           改开关/模板/时长
-POST /dsh-boot-animation-7f3a/api/save               存自定义模板
-POST /dsh-boot-animation-7f3a/api/remove             删自定义模板
+GET  /dsh-wallport-7f3a/api/state              设置 + 模板列表
+GET  /dsh-wallport-7f3a/api/active?rev=…       当前生效模板（页面加载时核对用）
+GET  /dsh-wallport-7f3a/api/preview?id=…       独立预览文档（text/html）
+POST /dsh-wallport-7f3a/api/settings           改开关/模板/时长
+POST /dsh-wallport-7f3a/api/save               存自定义模板
+POST /dsh-wallport-7f3a/api/remove             删自定义模板
 ```
 
 ## 安全与隐私
@@ -286,7 +298,7 @@ POST /dsh-boot-animation-7f3a/api/remove             删自定义模板
 ## 开发
 
 ```bash
-npm test                  # 33 个测试（等价于 `node --test`，不带目录参数）
+npm test                  # 34 个测试（等价于 `node --test`，不带目录参数）
 npm run check             # 全量语法检查
 npm run check:docs        # README 链接 / 模板清单 / 测试数量自检
 npm run check:all         # 上面三件事一起跑（CI 跑的就是它）
@@ -400,7 +412,7 @@ DSH_WallPort/
 **改完东西怎么发**：
 
 ```bash
-npm run check:all        # 语法 + 33 个测试 + 文档自检，全绿再提交
+npm run check:all        # 语法 + 34 个测试 + 文档自检，全绿再提交
 git add -A
 git commit -m "feat: ..."
 git push                 # CI（.github/workflows/checks.yml）会自动跑同一套检查
@@ -419,7 +431,7 @@ git push                 # CI（.github/workflows/checks.yml）会自动跑同�
 
 **发到 npm（让「填包名安装」成立）**。清单已经按 npm 发布要求准备好：没有 `private`、
 带 `publishConfig.access: "public"`、`files` 覆盖了运行时需要的全部文件（33 个文件，70 KB）。
-包名 `dsh-boot-animation` 目前未被占用。
+包名 `dsh-wallport` 目前未被占用。
 
 > ⚠️ 账号开了 2FA（auth-and-writes）时，`npm publish` 会报
 > `E403 ... Two-factor authentication or granular access token with bypass 2fa enabled is required`。
@@ -429,7 +441,7 @@ git push                 # CI（.github/workflows/checks.yml）会自动跑同�
 
 ```bash
 npm publish --otp=123456
-npm view dsh-boot-animation version     # 确认已上线
+npm view dsh-wallport version     # 确认已上线
 ```
 
 **B. 交给 CI 发（一次设置，之后只需打标签）**：仓库自带 `.github/workflows/publish.yml`
@@ -443,15 +455,15 @@ npm view dsh-boot-animation version     # 确认已上线
    git tag v0.1.2 && git push origin v0.1.2
    ```
 
-发完别人就能在 Plugins → **Add plugin** 里直接填 `dsh-boot-animation`（或
-`plugin_manager(action:"install_bundle", target:"dsh-boot-animation")`）。
+发完别人就能在 Plugins → **Add plugin** 里直接填 `dsh-wallport`（或
+`plugin_manager(action:"install_bundle", target:"dsh-wallport")`）。
 以后发新版本：改 `version` + 补 CHANGELOG → 打新标签。
 
 在发布之前，`npm pack` 出来的 tarball 可以直接验证安装效果（等价于 registry 那一份）：
 
 ```bash
-npm pack                                  # 生成 dsh-boot-animation-0.1.2.tgz
-pnpm add ./dsh-boot-animation-0.1.2.tgz   # 在任意测试项目里装一下
+npm pack                                  # 生成 dsh-wallport-0.1.2.tgz
+pnpm add ./dsh-wallport-0.1.2.tgz   # 在任意测试项目里装一下
 ```
 
 ## English
@@ -475,7 +487,7 @@ The agent path is `plugin_manager(action: "install_bundle", target: "https://git
 A template is just one self-contained HTML file — see [`examples/minimal-template.html`](examples/minimal-template.html)
 for an annotated skeleton, and [`docs/AI-自定义指南.md`](docs/AI-自定义指南.md) (Chinese) for the walkthrough.
 
-Verified with 33 tests; two of them execute DSH's own injection-rendering code extracted from `app.asar`
+Verified with 34 tests; two of them execute DSH's own injection-rendering code extracted from `app.asar`
 (`renderIndexInjections()` for `dsh web`, `hM()` for the desktop shell).
 
 ## License

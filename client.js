@@ -1,5 +1,5 @@
 /**
- * dsh-boot-animation —— 浏览器半侧（设置页）
+ * dsh-wallport —— 浏览器半侧（设置页）
  *
  * 一个设置分区「开机动画」：
  *   - 总开关 / 最短时长 / 兜底时长 / 是否可跳过；
@@ -12,15 +12,15 @@
  */
 
 window.__ModuleLoader__.load({
-  id: 'dsh-boot-animation',
+  id: 'dsh-wallport',
   factory(require) {
     const React = require('react')
     const h = React.createElement
     const { useCallback, useEffect, useMemo, useRef, useState } = React
 
     /** 与宿主半侧 src/shared/constants.js 保持一致。 */
-    const API = '/dsh-boot-animation-7f3a/api'
-    const NS = 'dsh-boot-animation'
+    const API = '/dsh-wallport-7f3a/api'
+    const NS = 'dsh-wallport'
 
     const zh = {
       nav: '开机动画',
@@ -586,7 +586,7 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
-      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-boot-animation: dictionaries')
+      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-wallport: dictionaries')
       const t = ctx.locale.bind(NS)
       ctx.slots.inject('settings.section', function* () {
         yield ctx.slots.register({

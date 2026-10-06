@@ -410,7 +410,7 @@ export function registerTools(ctx, service) {
   const tools = [listTool, saveTool, applyTool, previewTool, removeTool, settingsTool]
   for (const tool of tools) ctx.tools.register(tool)
   ctx.logger?.info?.(
-    `[dsh-boot-animation] 已注册 ${tools.length} 个工具（最大文档 ${Math.round(LIMITS.documentBytes / 1024)}KiB）`,
+    `[dsh-wallport] 已注册 ${tools.length} 个工具（最大文档 ${Math.round(LIMITS.documentBytes / 1024)}KiB）`,
   )
   return tools.length
 }

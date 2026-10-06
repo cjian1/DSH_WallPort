@@ -39,8 +39,8 @@ jobs:
       - name: Refuse to republish an existing version
         run: |
           version=$(node -p "require('./package.json').version")
-          if npm view "dsh-boot-animation@$version" version >/dev/null 2>&1; then
-            echo "dsh-boot-animation@$version 已经发布过了：改 package.json 的 version 再发" >&2
+          if npm view "dsh-wallport@$version" version >/dev/null 2>&1; then
+            echo "dsh-wallport@$version 已经发布过了：改 package.json 的 version 再发" >&2
             exit 1
           fi
 
