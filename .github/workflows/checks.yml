@@ -1,0 +1,30 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # 无依赖、无构建：直接跑
+      - name: Syntax check
+        run: node tools/syntax-check.mjs
+
+      # 其中两项「一致性测试」需要本机装有 DSH（读它的 app.asar）；
+      # 在 CI 上它们会自动 skip，而不是失败。DSH_ASAR 可以指定安装路径。
+      - name: Tests
+        run: node --test test/
+
+      - name: Docs check (README links, template list, test count)
+        run: node tools/check-docs.mjs

@@ -1,0 +1,66 @@
+{
+  "name": "dsh-boot-animation",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "description": "DSH_WallPort —— 给 DeepSeek Harness 的开机画面换一块墙纸：7 套内置动画 + 用 AI 现场生成。",
+  "meta": {
+    "title": "开机动画",
+    "description": "把 DeepSeek Harness 的启动画面换成你自己的动画：内置模板开箱即用，也可以用 AI 现场生成并保存。"
+  },
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs",
+    "examples"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "check": "node tools/syntax-check.mjs",
+    "check:docs": "node tools/check-docs.mjs",
+    "check:all": "node tools/syntax-check.mjs && node --test test/ && node tools/check-docs.mjs",
+    "preview": "node tools/preview.mjs --examples"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "boot-animation",
+    "splash-screen",
+    "wallpaper",
+    "wallport",
+    "cordis",
+    "ai-generated"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cjian1/DSH_WallPort.git"
+  },
+  "homepage": "https://github.com/cjian1/DSH_WallPort#readme",
+  "bugs": {
+    "url": "https://github.com/cjian1/DSH_WallPort/issues"
+  }
+}

@@ -1,0 +1,158 @@
+/**
+ * 内置模板：水墨
+ *
+ * 浅色宣纸底 + canvas 墨点扩散，中文「深度求索」落款，
+ * 进度用一条笔锋横线表示。适合浅色主题，也是唯一一个亮底模板。
+ */
+
+export default {
+  id: 'ink-wash',
+  name: { zh: '水墨', en: 'Ink Wash' },
+  theme: "light",
+  description: {
+    zh: '宣纸底色上墨点扩散，中文落款与笔锋进度线，亮色主题友好。',
+    en: 'Ink blots diffuse over paper, with a Chinese wordmark and a brush-stroke progress line.',
+  },
+  document: `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeepSeek Harness</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(120% 100% at 30% 10%, #fbf9f4 0%, #f2eee4 55%, #e8e2d4 100%);
+    color: #1d1c1a; overflow: hidden;
+    font-family: "Songti SC", "STSong", "Noto Serif SC", Georgia, "PingFang SC", serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .grain {
+    position: fixed; inset: 0; opacity: .5; pointer-events: none; mix-blend-mode: multiply;
+    background-image: radial-gradient(rgba(0,0,0,.045) 1px, transparent 1px);
+    background-size: 3px 3px;
+  }
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  .card { position: relative; text-align: center; }
+  .title {
+    font-size: clamp(22px, 4.4vmin, 46px); letter-spacing: .34em; text-indent: .34em;
+    writing-mode: horizontal-tb; color: #17161a;
+    opacity: 0; animation: rise 1.4s cubic-bezier(.22,.61,.36,1) .15s forwards;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+  .en { margin-top: 14px; font-size: clamp(10px, 1.3vmin, 13px); letter-spacing: .42em; text-indent: .42em;
+    text-transform: uppercase; color: rgba(29,28,26,.45); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .stroke { position: relative; margin: 30px auto 0; width: min(46vmin, 320px); height: 6px; }
+  .stroke::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: rgba(29,28,26,.16); transform: translateY(-50%);
+  }
+  .stroke i {
+    position: absolute; left: 0; top: 50%; height: 5px; width: 0%;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, rgba(23,22,26,.35), #17161a 60%, #2b3ea8);
+    border-radius: 3px 6px 6px 3px;
+    transition: width .4s cubic-bezier(.22,.61,.36,1);
+  }
+  .seal {
+    position: absolute; right: -54px; bottom: 2px; width: 34px; height: 34px;
+    border: 1.5px solid #a8342a; border-radius: 5px; color: #a8342a;
+    display: grid; place-items: center; font-size: 11px; line-height: 1.05; letter-spacing: 0;
+    font-family: "Songti SC", "STSong", serif; opacity: .0; animation: rise 1s ease-out 1s forwards;
+  }
+  .status { margin-top: 16px; font-size: 12px; letter-spacing: .2em; color: rgba(29,28,26,.42);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
+  @media (prefers-reduced-motion: reduce) { .title, .seal { animation: none; opacity: 1; } }
+</style>
+</head>
+<body>
+  <canvas id="ink"></canvas>
+  <div class="grain"></div>
+  <div class="stage">
+    <div class="card">
+      <div class="title">深度求索</div>
+      <div class="en">DeepSeek Harness</div>
+      <div class="stroke"><i id="stroke"></i></div>
+      <div class="status" id="status">正在启动</div>
+      <div class="seal">求索</div>
+    </div>
+  </div>
+<script>
+(function () {
+  var canvas = document.getElementById('ink');
+  var ctx = canvas.getContext('2d');
+  var bridge = window.dshBootAnim;
+  var dpr = Math.min(2, window.devicePixelRatio || 1);
+  var blots = [];
+  var progress = 0;
+  var reduced = bridge ? bridge.reduced() : false;
+
+  function spawn(initial) {
+    var x = Math.random() * canvas.width;
+    var y = Math.random() * canvas.height;
+    var life = initial ? Math.random() * 1 : 0;
+    return {
+      x: x, y: y, life: life,
+      speed: 0.0022 + Math.random() * 0.0034,
+      size: (60 + Math.random() * 150) * dpr,
+      drift: (Math.random() - 0.5) * 0.16 * dpr,
+      alpha: 0.05 + Math.random() * 0.075
+    };
+  }
+
+  function resize() {
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    blots = [];
+    var count = Math.max(8, Math.round((window.innerWidth * window.innerHeight) / 90000));
+    for (var i = 0; i < count; i++) blots.push(spawn(true));
+  }
+
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (var i = 0; i < blots.length; i++) {
+      var b = blots[i];
+      b.life += b.speed * (reduced ? 0.4 : 1) * (0.6 + progress);
+      if (b.life >= 1) { blots[i] = spawn(false); continue; }
+      var r = b.size * (0.35 + b.life * 1.25);
+      var fade = Math.sin(b.life * Math.PI);
+      var g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+      g.addColorStop(0, 'rgba(28,30,42,' + (b.alpha * fade).toFixed(3) + ')');
+      g.addColorStop(0.55, 'rgba(40,44,66,' + (b.alpha * fade * 0.45).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(40,44,66,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      b.x += b.drift;
+      b.y += b.drift * 0.5;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  var stroke = document.getElementById('stroke');
+  var status = document.getElementById('status');
+  function render(p) {
+    progress = Math.max(0, Math.min(1, Number(p) || 0));
+    stroke.style.width = (progress * 100).toFixed(1) + '%';
+    status.textContent = progress >= 1 ? '就绪' : '正在启动 ' + Math.round(progress * 100) + '%';
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+
+  if (bridge) {
+    render(bridge.progress());
+    bridge.on('progress', render);
+  } else {
+    var t0 = Date.now();
+    setInterval(function () { render(((Date.now() - t0) / 3000) % 1.02); }, 60);
+  }
+})();
+</script>
+</body>
+</html>`,
+}

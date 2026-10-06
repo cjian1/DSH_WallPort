@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><script>(function bootBridge(name) {
+  var listeners = {}
+  var state = { progress: 0, elapsed: 0, phase: 'boot', ready: false, visible: true, reduced: false, done: false }
+
+  function on(event, fn) {
+    if (typeof fn !== 'function') return function () {}
+    var list = listeners[event] || (listeners[event] = [])
+    list.push(fn)
+    return function () {
+      var at = list.indexOf(fn)
+      if (at >= 0) list.splice(at, 1)
+    }
+  }
+
+  function fire(event, value) {
+    var list = listeners[event]
+    if (!list) return
+    for (var i = 0; i < list.length; i++) {
+      try {
+        list[i](value, state)
+      } catch (error) {
+        if (window.console && window.console.error) window.console.error('[boot-animation] listener failed:', error)
+      }
+    }
+  }
+
+  var api = {
+    on: on,
+    onProgress: function (fn) {
+      return on('progress', fn)
+    },
+    onReady: function (fn) {
+      return on('ready', fn)
+    },
+    progress: function () {
+      return state.progress
+    },
+    elapsed: function () {
+      return state.elapsed
+    },
+    isReady: function () {
+      return state.ready
+    },
+    phase: function () {
+      return state.phase
+    },
+    reduced: function () {
+      return state.reduced
+    },
+    state: state,
+    _set: function (key, value) {
+      if (state[key] === value) return
+      state[key] = value
+      if (key === 'phase' && value === 'done') {
+        state.ready = true
+        state.done = true
+        fire('ready', true)
+      }
+      if (key === 'progress') state.ready = state.ready || value >= 1
+      fire(key, value)
+      if (key === 'progress' && value >= 1) fire('ready', true)
+    },
+  }
+
+  window[name] = api
+})("dshBootAnim");(function bootPreviewSimulator(name, options) {
+  var bridge = window[name]
+  if (!bridge) return
+  var cycleMs = (options && options.cycleMs) || 2600
+  var holdMs = (options && options.holdMs) || 900
+  var period = cycleMs + holdMs
+  var startedAt = Date.now()
+  bridge._set('phase', 'preview')
+
+  function frame() {
+    var t = (Date.now() - startedAt) % period
+    if (t <= cycleMs) {
+      var p = Math.min(1, t / cycleMs)
+      var eased = 1 - Math.pow(1 - p, 2.2)
+      bridge._set('visible', true)
+      bridge._set('elapsed', t)
+      bridge._set('progress', Math.round(eased * 1000) / 1000)
+    } else {
+      bridge._set('progress', 1)
+      bridge._set('visible', false)
+    }
+    window.requestAnimationFrame(frame)
+  }
+  window.requestAnimationFrame(frame)
+})("dshBootAnim",{cycleMs:2600,holdMs:900,loop:true});</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeepSeek Harness</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(80% 70% at 50% 45%, #0e1630 0%, #060a18 55%, #03050c 100%);
+    overflow: hidden; color: #e8eeff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  .scene { position: relative; width: min(70vmin, 560px); aspect-ratio: 1; }
+  .ring { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .ring.a { transform: rotate(0deg) scaleY(.42); animation: spin 7s linear infinite; }
+  .ring.b { transform: rotate(60deg) scaleY(.42); animation: spin 9.5s linear infinite reverse; }
+  .ring.c { transform: rotate(120deg) scaleY(.42); animation: spin 12s linear infinite; }
+  .ring svg { width: 100%; height: 100%; overflow: visible; }
+  .track { fill: none; stroke: rgba(150,178,255,.24); stroke-width: 1; }
+  .p { fill: #9db4ff; filter: drop-shadow(0 0 8px rgba(120,155,255,.9)); }
+  .core {
+    position: absolute; left: 50%; top: 50%; width: 16%; aspect-ratio: 1; transform: translate(-50%,-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 42% 38%, #ffffff 0%, #b9caff 26%, #4d6bfe 62%, rgba(43,62,168,.15) 100%);
+    box-shadow: 0 0 44px rgba(77,107,254,.75), 0 0 120px rgba(77,107,254,.35);
+    animation: pulse 2.8s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: translate(-50%,-50%) scale(.94) } 50% { transform: translate(-50%,-50%) scale(1.06) } }
+  @keyframes spin { to { transform: rotate(360deg) scaleY(.42); } }
+  .label {
+    position: absolute; left: 50%; bottom: -13vmin; transform: translateX(-50%);
+    text-align: center; white-space: nowrap;
+  }
+  .wordmark { font-size: clamp(12px, 1.7vmin, 16px); letter-spacing: .4em; text-indent: .4em; text-transform: uppercase; }
+  .pct { margin-top: 10px; font-size: 12px; letter-spacing: .18em; color: rgba(232,238,255,.55); font-variant-numeric: tabular-nums; }
+  .halo {
+    position: absolute; left: 50%; top: 50%; width: 54%; aspect-ratio: 1; transform: translate(-50%,-50%);
+    border-radius: 50%; border: 1px solid rgba(157,180,255,.0); transition: border-color .8s ease, box-shadow .8s ease;
+  }
+  body.ready .halo { border-color: rgba(157,180,255,.55); box-shadow: 0 0 60px rgba(77,107,254,.35) inset, 0 0 40px rgba(77,107,254,.25); }
+  body.ready .ring { animation-duration: 26s; }
+  @media (prefers-reduced-motion: reduce) {
+    .ring, .core { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="scene">
+      <div class="halo"></div>
+      <div class="ring a">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <ellipse class="track" cx="100" cy="100" rx="92" ry="92"/>
+          <circle class="p" id="p1" cx="192" cy="100" r="3.4"/>
+        </svg>
+      </div>
+      <div class="ring b">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <ellipse class="track" cx="100" cy="100" rx="74" ry="74"/>
+          <circle class="p" id="p2" cx="174" cy="100" r="2.8"/>
+        </svg>
+      </div>
+      <div class="ring c">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <ellipse class="track" cx="100" cy="100" rx="56" ry="56"/>
+          <circle class="p" id="p3" cx="156" cy="100" r="2.4"/>
+        </svg>
+      </div>
+      <div class="core"></div>
+      <div class="label">
+        <div class="wordmark">DeepSeek Harness</div>
+        <div class="pct" id="pct">0%</div>
+      </div>
+    </div>
+  </div>
+<script>
+(function () {
+  var bridge = window.dshBootAnim;
+  var rings = [
+    { el: document.querySelector('.ring.a'), p: document.getElementById('p1'), r: 92 },
+    { el: document.querySelector('.ring.b'), p: document.getElementById('p2'), r: 74 },
+    { el: document.querySelector('.ring.c'), p: document.getElementById('p3'), r: 56 }
+  ];
+  var pct = document.getElementById('pct');
+  var progress = 0;
+  var angle = 0;
+
+  // 用 rAF 直接驱动轨道角度：转速与半径都跟着真实进度走，
+  // 比纯 CSS 动画更能表达「正在推进」。
+  function frame() {
+    var rate = 0.35 + progress * 1.9;
+    angle = (angle + rate) % 360;
+    for (var i = 0; i < rings.length; i++) {
+      var ring = rings[i];
+      var a = (angle * (i % 2 === 0 ? 1 : -1) * (1 + i * 0.12)) * Math.PI / 180;
+      var radius = ring.r * (1 - progress * 0.18);
+      ring.p.setAttribute('cx', String(100 + Math.cos(a) * radius));
+      ring.p.setAttribute('cy', String(100 + Math.sin(a) * radius));
+      ring.p.setAttribute('r', String(2.2 + (1 - progress) * 1.4));
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function render(p) {
+    progress = Math.max(0, Math.min(1, Number(p) || 0));
+    pct.textContent = Math.round(progress * 100) + '%';
+    document.body.classList.toggle('ready', progress >= 1);
+  }
+
+  requestAnimationFrame(frame);
+  if (bridge) {
+    render(bridge.progress());
+    bridge.on('progress', render);
+  } else {
+    var t0 = Date.now();
+    setInterval(function () { render(((Date.now() - t0) / 3000) % 1.02); }, 60);
+  }
+})();
+</script>
+</body>
+</html>

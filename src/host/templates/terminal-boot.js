@@ -1,0 +1,164 @@
+/**
+ * 内置模板：终端启动
+ *
+ * 黑底等宽字体，逐行打印启动日志，最后一行是块状进度条 + 闪烁光标。
+ * 日志行会随着真实进度推进（每行带 [ ok ] / [ .. ] 状态）。
+ */
+
+export default {
+  id: 'terminal-boot',
+  name: { zh: '终端启动', en: 'Terminal Boot' },
+  theme: "dark",
+  description: {
+    zh: '等宽终端逐行打印启动日志，块状进度条跟着真实进度走。',
+    en: 'A monospace terminal logs the boot line by line; a blocky bar tracks real progress.',
+  },
+  document: `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeepSeek Harness</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(120% 120% at 50% 0%, #0d1424 0%, #05070c 60%, #03040a 100%);
+    color: #cfe0ff; overflow: hidden;
+    font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace);
+  }
+  .stage {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 6vmin;
+  }
+  .term {
+    width: min(760px, 92vw); max-height: 80vh;
+    border: 1px solid rgba(120,150,255,.22); border-radius: 12px;
+    background: rgba(8,12,22,.92);
+    box-shadow: 0 24px 70px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+    overflow: hidden;
+  }
+  .bar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid rgba(120,150,255,.16); background: rgba(255,255,255,.02);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .title { margin-left: 8px; font-size: 12px; color: rgba(207,224,255,.55); letter-spacing: .08em; }
+  .body { padding: 18px 20px 22px; font-size: clamp(12px, 1.5vmin, 14px); line-height: 1.85; min-height: 44vh; }
+  .line { white-space: pre-wrap; word-break: break-word; opacity: 0; transform: translateY(3px); animation: in .28s ease-out forwards; }
+  @keyframes in { to { opacity: 1; transform: none; } }
+  .prompt { color: #7f9bff; }
+  .cmd { color: #eaf1ff; }
+  .ok { color: #4fd18b; }
+  .wait { color: #f0c674; }
+  .dim { color: rgba(207,224,255,.42); }
+  .progress { color: #8ea6ff; }
+  .cursor {
+    display: inline-block; width: .62em; height: 1.05em; margin-left: 2px;
+    background: #8ea6ff; vertical-align: -.18em; animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .glow { animation: glow 2.6s ease-in-out infinite; }
+  @keyframes glow { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) {
+    .line { animation: none; opacity: 1; transform: none; }
+    .cursor, .glow { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="term">
+      <div class="bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="title">dsh — boot</span>
+      </div>
+      <div class="body" id="log"></div>
+    </div>
+  </div>
+<script>
+(function () {
+  var log = document.getElementById('log');
+  var bridge = window.dshBootAnim;
+  var STEPS = [
+    { at: 0.00, text: '$ dsh boot --profile desktop', cls: 'cmd', prompt: true },
+    { at: 0.04, text: '读取 profile 配置层 … 完成', tag: 'ok' },
+    { at: 0.16, text: '启动宿主服务 webServer / tools / llm …', tag: 'ok' },
+    { at: 0.34, text: '装载插件捆绑包 …', tag: 'ok' },
+    { at: 0.58, text: '构建浏览器模块图 …', tag: 'ok' },
+    { at: 0.78, text: '挂载界面与主题 …', tag: 'ok' },
+    { at: 0.94, text: '恢复工作区会话 …', tag: 'ok' },
+    { at: 1.00, text: 'DeepSeek Harness 就绪', tag: 'ok' }
+  ];
+  var printed = 0;
+  var progressLine = document.createElement('div');
+  progressLine.className = 'line';
+  var cursor = document.createElement('span');
+  cursor.className = 'cursor';
+
+  function lineNode(step) {
+    var row = document.createElement('div');
+    row.className = 'line';
+    if (step.prompt) {
+      var p = document.createElement('span');
+      p.className = 'prompt';
+      p.textContent = '❯ ';
+      row.appendChild(p);
+    }
+    var text = document.createElement('span');
+    text.className = step.cls || '';
+    text.textContent = step.text;
+    row.appendChild(text);
+    if (step.tag) {
+      var tag = document.createElement('span');
+      tag.className = step.tag === 'ok' ? 'ok' : 'wait';
+      tag.textContent = '  [' + step.tag + ']';
+      row.appendChild(tag);
+    }
+    return row;
+  }
+
+  function bar(p, width) {
+    var filled = Math.round(p * width);
+    return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled));
+  }
+
+  function render(p) {
+    p = Math.max(0, Math.min(1, Number(p) || 0));
+    for (var i = printed; i < STEPS.length; i++) {
+      if (STEPS[i].at > p && i > 0) break;
+      log.insertBefore(lineNode(STEPS[i]), progressLine);
+      printed = i + 1;
+    }
+    var label = String(Math.round(p * 100)).padStart(3, ' ');
+    progressLine.textContent = '';
+    var barSpan = document.createElement('span');
+    barSpan.className = 'progress glow';
+    barSpan.textContent = bar(p, 28) + '  ' + label + '%';
+    progressLine.appendChild(barSpan);
+    progressLine.appendChild(cursor);
+    if (log.lastChild !== progressLine) log.appendChild(progressLine);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  log.appendChild(progressLine);
+
+  if (bridge) {
+    render(bridge.progress());
+    bridge.on('progress', render);
+    bridge.on('visible', function (visible) {
+      if (!visible) { cursor.style.animation = 'none'; cursor.style.opacity = '0'; }
+    });
+  } else {
+    var t = 0;
+    setInterval(function () {
+      t = (t + 0.02) % 1.05;
+      render(Math.min(1, t));
+    }, 60);
+  }
+})();
+</script>
+</body>
+</html>`,
+}

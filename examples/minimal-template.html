@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  DSH_WallPort 开机动画模板 · 最小骨架（带注释版）
+
+  这是「一段自包含 HTML」的最小可用形态，复制它改一改就是你的模板：
+
+  1. 铺满全屏、不要滚动（body 100% + overflow:hidden）；
+  2. 不依赖任何网络资源：图形用内联 SVG / CSS / canvas；
+  3. 想要真实启动进度就读 window.dshBootAnim（拿不到时自己降级成自播动画，
+     这样单独用浏览器打开这个文件也能看）；
+  4. 颜色/字体自带 —— 开机阶段 DSH 的主题 CSS 还没加载，--dsw-alias-* 不可用；
+  5. 时长由插件控制（默认最短 1.2s、最长 12s）：循环播放即可，不需要自己结束。
+
+  想装进 DSH：设置 → 外观 → 开机动画 → 「手动导入模板」，
+  把整段 HTML 粘进去，或让 AI 用 boot_animation_save 保存。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Boot Animation</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(120% 90% at 50% 40%, #16224a 0%, #0a0f22 48%, #04060d 100%);
+    color: #e9edff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .card { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .title { font-size: 15px; letter-spacing: .4em; text-indent: .4em; text-transform: uppercase; }
+  .bar { width: min(46vmin, 320px); height: 3px; border-radius: 999px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; border-radius: inherit;
+    background: linear-gradient(90deg, #4d6bfe, #b9c9ff); transition: width .3s ease; }
+  .pct { font-size: 12px; letter-spacing: .18em; color: rgba(233,237,255,.6); font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">My WallPort</div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="pct" id="pct">0%</div>
+  </div>
+<script>
+(function () {
+  var bar = document.getElementById('bar');
+  var pct = document.getElementById('pct');
+  var bridge = window.dshBootAnim;   // 真实开机时由插件注入；单独打开时为 undefined
+
+  function render(p) {
+    p = Math.max(0, Math.min(1, Number(p) || 0));
+    bar.style.width = (p * 100).toFixed(1) + '%';
+    pct.textContent = Math.round(p * 100) + '%';
+  }
+
+  if (bridge) {
+    render(bridge.progress());        // 当前进度 0…1
+    bridge.on('progress', render);    // 进度变化（同一个值不会重复触发）
+    if (bridge.reduced()) document.body.classList.add('reduced');
+  } else {
+    // 降级：自己播一遍，方便单独打开预览
+    var t0 = Date.now();
+    setInterval(function () { render((Date.now() - t0) / 2600 % 1); }, 60);
+  }
+})();
+</script>
+</body>
+</html>
