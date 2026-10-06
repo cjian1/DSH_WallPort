@@ -2,6 +2,13 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)；日期为本地时间。
 
+## 0.2.1 — 2026-10-06
+
+- **首次真正上线 npm**：`dsh-wallport@0.2.1`。内容与 0.2.0 完全一致。
+- 为什么不是 0.2.0：那次 `npm publish`（npm 11 的分阶段发布流程）在 registry 上占用了
+  0.2.0 这个版本号，但没有对外可见的版本；npm 的版本号一经使用不可复用，
+  因此跳到 0.2.1 重新发布（`npm stage publish` → `npm stage approve <stage-id>`）。
+
 ## 0.2.0 — 2026-10-06
 
 **统一命名为 DSH_WallPort**

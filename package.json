@@ -1,6 +1,6 @@
 {
   "name": "dsh-wallport",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "DSH_WallPort —— 给 DeepSeek Harness 的开机画面换一块墙纸：7 套内置动画 + 用 AI 现场生成。",
   "meta": {
