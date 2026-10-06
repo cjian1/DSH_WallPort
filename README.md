@@ -45,7 +45,7 @@ DSH_WallPort 是一个 DSH 插件，它把这段画面换成你选的动画：
 | 🖥️ **两种承载都支持** | 桌面 App（`dsh-app://`）与 `dsh web`（本机 HTTP）走同一张注入表 |
 | 🛟 **不会锁死界面** | 应用挂载即淡出；启动报错立刻让路；超时兜底；随处点击可跳过；平时 `pointer-events:none` |
 | 🧩 **模板即 HTML** | 一个模板 = 一段自包含 HTML，AI 能写、你能改、能单独预览 |
-| 🧪 **有验证** | 32 个测试，其中两项直接执行 DSH 自己的注入渲染代码 |
+| 🧪 **有验证** | 33 个测试，其中两项直接执行 DSH 自己的注入渲染代码 |
 
 ## 快速开始
 
@@ -72,7 +72,7 @@ DSH 侧边栏的 **Plugins** 页面自带 **Add plugin** 输入框，它接受 G
 | git+https / SSH | `git+https://…`、`git@github.com:cjian1/DSH_WallPort.git` | 私有仓库用 SSH |
 | tarball | `https://…/DSH_WallPort-0.1.2.tgz`，或本地 `/abs/x.tgz` | `pnpm pack` 出来的离线包 |
 | 本地目录 | `/Users/你/DSH_WallPort` | **必须绝对路径**，相对路径会被拒绝 |
-| npm 包名 | `dsh-boot-animation` | 如果你把它发到了 npm |
+| npm 包名 | `dsh-boot-animation` | 已按 npm 发布要求打包好；`npm publish` 之后可直接填包名 |
 
 安装过程：DSH 先用 `git ls-remote` 探一次仓库连通性（默认 5 秒超时），再交给 pnpm 拉取。
 本插件**没有任何依赖、没有构建脚本**，所以不会弹「允许运行安装脚本」那一类确认；
@@ -286,7 +286,7 @@ POST /dsh-boot-animation-7f3a/api/remove             删自定义模板
 ## 开发
 
 ```bash
-npm test                  # 32 个测试（等价于 `node --test`，不带目录参数）
+npm test                  # 33 个测试（等价于 `node --test`，不带目录参数）
 npm run check             # 全量语法检查
 npm run check:docs        # README 链接 / 模板清单 / 测试数量自检
 npm run check:all         # 上面三件事一起跑（CI 跑的就是它）
@@ -400,7 +400,7 @@ DSH_WallPort/
 **改完东西怎么发**：
 
 ```bash
-npm run check:all        # 语法 + 32 个测试 + 文档自检，全绿再提交
+npm run check:all        # 语法 + 33 个测试 + 文档自检，全绿再提交
 git add -A
 git commit -m "feat: ..."
 git push                 # CI（.github/workflows/checks.yml）会自动跑同一套检查
@@ -417,10 +417,26 @@ git push                 # CI（.github/workflows/checks.yml）会自动跑同�
 ![开机动画](docs/media/demo.gif)
 ```
 
-**可选：发到 npm**。先去掉 `package.json` 里的 `"private": true`（它是防止误发布的），
-包名 `dsh-boot-animation` 未被占用的话 `npm publish` 即可；之后别人能直接在
-Plugins → Add plugin 里填包名，或用
-`plugin_manager(action:"install_bundle", target:"dsh-boot-animation")`。
+**发到 npm（让「填包名安装」成立）**。清单已经按 npm 发布要求准备好：没有 `private`、
+带 `publishConfig.access: "public"`、`files` 覆盖了运行时需要的全部文件（33 个文件，70 KB）。
+包名 `dsh-boot-animation` 目前未被占用，登录你自己的 npm 账号后发一次即可：
+
+```bash
+npm login          # 浏览器/一次性密码登录你自己的 npm 账号
+npm publish        # 在仓库根目录执行
+npm view dsh-boot-animation     # 确认已上线
+```
+
+发完别人就能在 Plugins → **Add plugin** 里直接填 `dsh-boot-animation`（或
+`plugin_manager(action:"install_bundle", target:"dsh-boot-animation")`）。
+以后发新版本：改 `version` + 补 CHANGELOG，再 `npm publish` 一次。
+
+在发布之前，`npm pack` 出来的 tarball 可以直接验证安装效果（等价于 registry 那一份）：
+
+```bash
+npm pack                                  # 生成 dsh-boot-animation-0.1.2.tgz
+pnpm add ./dsh-boot-animation-0.1.2.tgz   # 在任意测试项目里装一下
+```
 
 ## English
 
@@ -443,7 +459,7 @@ The agent path is `plugin_manager(action: "install_bundle", target: "https://git
 A template is just one self-contained HTML file — see [`examples/minimal-template.html`](examples/minimal-template.html)
 for an annotated skeleton, and [`docs/AI-自定义指南.md`](docs/AI-自定义指南.md) (Chinese) for the walkthrough.
 
-Verified with 32 tests; two of them execute DSH's own injection-rendering code extracted from `app.asar`
+Verified with 33 tests; two of them execute DSH's own injection-rendering code extracted from `app.asar`
 (`renderIndexInjections()` for `dsh web`, `hM()` for the desktop shell).
 
 ## License

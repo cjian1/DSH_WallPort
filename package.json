@@ -1,7 +1,6 @@
 {
   "name": "dsh-boot-animation",
   "version": "0.1.2",
-  "private": true,
   "type": "module",
   "description": "DSH_WallPort —— 给 DeepSeek Harness 的开机画面换一块墙纸：7 套内置动画 + 用 AI 现场生成。",
   "meta": {
@@ -62,5 +61,8 @@
   "homepage": "https://github.com/cjian1/DSH_WallPort#readme",
   "bugs": {
     "url": "https://github.com/cjian1/DSH_WallPort/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -15,6 +15,9 @@
 - README 新增「一键安装：复制链接就能装」：Plugins → Add plugin → 粘贴仓库地址 →
   Install → Enable now → 重启一次 DSH；并补了安装失败排查（相对路径、私有仓库、GitHub 不可达）。
 - 文档自检新增两条断言：一键安装说明必须写清 UI 入口；CHANGELOG 版本号必须与 package.json 一致。
+- **支持「填包名安装」**：去掉 `private`、加 `publishConfig.access: "public"`，
+  `files` 覆盖运行时全部文件（`npm pack` 后 33 个文件 / 70 KB）；新增断言把「发布就绪」钉住，
+  并用真实的 tarball 走了一遍 pnpm 安装 + 宿主半侧加载验证。
 
 ## 0.1.1 — 2026-10-05
 

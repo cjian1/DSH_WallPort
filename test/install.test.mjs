@@ -81,8 +81,31 @@ test('安装不会被 peerDependencies 兼容检查拦下', () => {
   assert.deepEqual(manifest.dependencies, undefined, '插件不依赖任何包')
 })
 
+test('已按 npm 发布要求准备好（「填包名安装」用得上的那份清单）', () => {
+  // npm publish 会拒绝 private:true 的包；去掉它才可能填包名安装
+  assert.notEqual(manifest.private, true, '不能是 private 包')
+  assert.equal(manifest.publishConfig?.access, 'public', '公开发布')
+  assert.match(manifest.name, /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/, '包名必须是 registry 接受的形状')
+  assert.equal(manifest.license, 'MIT')
+  // registry 安装只带上 files 列出的内容：运行时需要的文件一个都不能少
+  for (const required of [
+    'index.js',
+    'client.js',
+    'src',
+    'locale',
+    'icon.svg',
+    'cordis.patch.yml',
+    'README.md',
+    'CHANGELOG.md',
+    'LICENSE',
+    'docs',
+    'examples',
+  ]) {
+    assert.ok(manifest.files.includes(required), `files 应包含 ${required}`)
+  }
+})
+
 test('清单具备「能被当成 bundle 安装」的三要素', () => {
-  assert.equal(manifest.private, true, '私有包：防止误发 npm；GitHub 安装不受影响')
   assert.equal(manifest.type, 'module')
   assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml', '必须声明 bundle patch')
   assert.equal(manifest.dsh?.client?.platform, 'web', '必须声明浏览器半侧')
