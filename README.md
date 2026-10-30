@@ -442,8 +442,8 @@ git push                 # CI（.github/workflows/checks.yml）会自动跑同�
 ```
 
 **发到 npm（让「填包名安装」成立）**。清单已经按 npm 发布要求准备好：没有 `private`、
-带 `publishConfig.access: "public"`、`files` 覆盖了运行时需要的全部文件（33 个文件，70 KB）。
-包名 `dsh-wallport` 目前未被占用。
+带 `publishConfig.access: "public"`、`files` 覆盖了运行时需要的全部文件（33 个文件，打包后约 85 KB）。
+包名 `dsh-wallport` 已发布在 npm 上（`npm view dsh-wallport` 可查当前版本）。
 
 > ⚠️ 账号开了 2FA（auth-and-writes）时，`npm publish` 会报
 > `E403 ... Two-factor authentication or granular access token with bypass 2fa enabled is required`。
