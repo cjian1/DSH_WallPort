@@ -4,7 +4,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -14,6 +14,7 @@ import { composeInjectionRows, composePreviewDocument, injectBridge, overlayCss 
 import { createBootAnimationService } from '../src/host/service.js'
 import { LEGACY_STATE_DIR_NAME, STATE_DIR_NAME, createStore } from '../src/host/store.js'
 import { BUILTIN_TEMPLATES } from '../src/host/templates/index.js'
+import { registerTools } from '../src/host/tools.js'
 import { API_PREFIX, DEFAULTS, LIMITS, ROUTE_PREFIX } from '../src/shared/constants.js'
 import { asFullDocument, jsonForScript, normalizeTemplate, normalizeTemplateId } from '../src/shared/validate.js'
 
@@ -102,6 +103,11 @@ test('状态仓：默认值、落盘、增删改', async () => {
     const reloaded = await createStore({ dir })
     assert.equal(reloaded.listTemplates().length, 1)
 
+    // 解析结果有缓存，但手工改了文件下次读取立刻生效
+    const file = join(dir, 'templates', 'my-boot.json')
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), name: '手工改过的名字' }))
+    assert.equal(reloaded.getTemplate('my-boot').name, '手工改过的名字')
+
     assert.equal(reloaded.removeTemplate('my-boot'), true)
     assert.equal((await createStore({ dir })).listTemplates().length, 0)
   } finally {
@@ -159,6 +165,57 @@ test('状态仓：目录不可写时退回内存而不是崩掉', async () => {
     assert.equal(store.degraded, true)
     assert.doesNotThrow(() => store.saveTemplate(sample('mem-boot')))
     assert.equal(store.getTemplate('mem-boot').id, 'mem-boot')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('状态仓：只读目录里已有旧 state.json 时，改动仍在本次运行内生效', { skip: process.getuid?.() === 0 }, async () => {
+  const dir = tempDir()
+  try {
+    const first = await createStore({ dir })
+    first.writeSettings({ template: 'orbit' })
+    first.saveTemplate(sample('disk-boot'))
+    chmodSync(dir, 0o555)
+    chmodSync(join(dir, 'templates'), 0o555)
+
+    const store = await createStore({ dir })
+    store.writeSettings({ template: 'starfield' })
+    assert.equal(store.readSettings().template, 'starfield', '旧 state.json 不能把刚做的改动吃掉')
+    assert.equal(store.degraded, true)
+    store.saveTemplate({ ...sample('disk-boot'), name: '新版本' })
+    assert.equal(store.getTemplate('disk-boot').name, '新版本', '没能落盘的新版本优先于磁盘上的旧文件')
+    assert.equal(store.removeTemplate('disk-boot'), true)
+    assert.equal(store.getTemplate('disk-boot'), undefined, '没能删掉的文件也当作已删除')
+    assert.equal(store.listTemplates().length, 0)
+  } finally {
+    chmodSync(join(dir, 'templates'), 0o755)
+    chmodSync(dir, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('预览工具：只写 .html，不覆盖别人的文件，相对路径落在 previews/ 里', async () => {
+  const dir = tempDir()
+  try {
+    const service = await createBootAnimationService({ dir })
+    const tools = []
+    registerTools({ tools: { register: (tool) => tools.push(tool) } }, service)
+    const preview = tools.find((tool) => tool.name === 'boot_animation_preview')
+
+    const byDefault = await preview.execute({ id: 'ORBIT' })
+    assert.equal(byDefault.path, join(dir, 'previews', 'orbit.html'), '默认落点用规范化后的 id')
+    const relative = await preview.execute({ id: 'orbit', path: 'mine/orbit.html' })
+    assert.equal(relative.path, join(dir, 'previews', 'mine', 'orbit.html'))
+    assert.ok(readFileSync(relative.path, 'utf8').includes('bootPreviewSimulator'))
+    // 覆盖自己导出过的预览可以
+    await preview.execute({ id: 'starfield', path: relative.path })
+
+    await assert.rejects(() => preview.execute({ path: join(dir, 'evil.sh') }), /\.html/)
+    const precious = join(dir, 'notes.html')
+    writeFileSync(precious, '<p>我的笔记</p>')
+    await assert.rejects(() => preview.execute({ path: precious }), /拒绝覆盖/)
+    assert.equal(readFileSync(precious, 'utf8'), '<p>我的笔记</p>', '别人的文件原样不动')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -229,11 +286,12 @@ test('预览文档可独立播放（每个内置模板）', () => {
 })
 
 /** 构造一个最小的 req/res 组合来跑 API handler。 */
-function callApi(handler, { method = 'GET', path, body }) {
+function callApi(handler, { method = 'GET', path, body, headers }) {
   const chunks = body === undefined ? [] : [Buffer.from(JSON.stringify(body))]
   const req = {
     method,
     url: path,
+    headers: headers ?? (method === 'POST' ? { 'content-type': 'application/json' } : {}),
     async *[Symbol.asyncIterator]() {
       for (const chunk of chunks) yield chunk
     },
@@ -358,6 +416,44 @@ test('HTTP API：state / settings / save / remove / preview / 404', async () => 
 
     const notFound = await callApi(handler, { path: `${ROUTE_PREFIX}/nope` })
     assert.equal(notFound.status, 404)
+
+    // 外站伪造不了写操作：跨站请求 403；非 JSON 的「简单请求」415（逼它走它过不了的 CORS 预检）
+    const crossSite = await callApi(handler, {
+      method: 'POST',
+      path: `${API_PREFIX}/save`,
+      body: { template: sample('evil'), activate: true },
+      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+    })
+    assert.equal(crossSite.status, 403)
+    const foreignOrigin = await callApi(handler, {
+      path: `${API_PREFIX}/state`,
+      headers: { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:9999' },
+    })
+    assert.equal(foreignOrigin.status, 403)
+    const simpleRequest = await callApi(handler, {
+      method: 'POST',
+      path: `${API_PREFIX}/save`,
+      body: { template: sample('evil'), activate: true },
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+    })
+    assert.equal(simpleRequest.status, 415)
+    assert.equal(service.findTemplate('evil'), undefined, '被拒的请求不能留下模板')
+    const notObject = await callApi(handler, { method: 'POST', path: `${API_PREFIX}/settings`, body: [1] })
+    assert.equal(notObject.status, 400)
+    const badType = await callApi(handler, { method: 'POST', path: `${API_PREFIX}/settings`, body: { enabled: 'yes' } })
+    assert.equal(badType.status, 400, '类型不对要报错，而不是悄悄改成默认值')
+
+    // 预览永远沙箱化（「在新标签打开」也一样）；宿主给的 authorize 优先
+    assert.equal(preview.headers['content-security-policy'], 'sandbox allow-scripts')
+    const locked = createApiHandler(service, { authorize: () => 401 })
+    assert.equal((await callApi(locked, { path: `${API_PREFIX}/state` })).status, 401)
+
+    // 覆盖了内置 id 的自定义模板可以删掉（删掉即恢复内置版本）
+    service.saveTemplate({ ...sample('orbit'), name: '我的轨道' }, { activate: true })
+    assert.equal(service.snapshot().templates.find((item) => item.id === 'orbit').builtin, false)
+    assert.equal(service.removeTemplate('orbit'), true)
+    assert.equal(service.activeTemplate().name.zh, '轨道粒子', '删掉覆盖后应回到内置版本')
+    assert.throws(() => service.removeTemplate('orbit'), /内置模板不可删除/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

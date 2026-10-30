@@ -100,7 +100,7 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
     assert.deepEqual(module.inject, ['webServer'])
 
     const ctx = fakeContext()
-    module.apply(ctx, {
+    await module.apply(ctx, {
       enabled: true,
       template: 'orbit',
       minDurationMs: 800,
@@ -108,7 +108,7 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
       skippable: false,
     })
 
-    // 路由立刻注册（handler 内再等 service 就绪）
+    // apply 是 async 的：返回时服务已就绪、路由已注册
     assert.equal(ctx.routes.length, 1)
     assert.equal(ctx.routes[0].kind, 'prefix')
     assert.equal(ctx.routes[0].path, ROUTE_PREFIX)
@@ -169,7 +169,7 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
     const home2 = mkdtempSync(join(tmpdir(), 'dsh-wallport-entry2-'))
     process.env.DSH_HOME = home2
     const ctx2 = fakeContext()
-    module.apply(ctx2, { enabled: 'yes', minDurationMs: -5, maxDurationMs: 999999, template: 42 })
+    await module.apply(ctx2, { enabled: 'yes', minDurationMs: -5, maxDurationMs: 999999, template: 42 })
     const defaultsRows = []
     for (let attempt = 0; attempt < 60 && defaultsRows.length === 0; attempt += 1) {
       await sleep(25)
@@ -183,6 +183,33 @@ test('入口 import + apply：注入行、路由、工具、配置兜底', async
       '非法 enabled 应产生警告',
     )
     assert.ok(defaultsRows[2].text.includes('"minDurationMs":1200'), '非法时长应回落默认值')
+
+    // profile 里有 DSH 的 connection 服务时，路由用它鉴权（与 DSH 内置路由同一套规则）
+    const ctx3 = fakeContext()
+    const seen = []
+    ctx3.get = (name) =>
+      name === 'connection'
+        ? {
+            requestRejection: (req) => {
+              seen.push(req.url)
+              return 401
+            },
+          }
+        : undefined
+    await module.apply(ctx3, {})
+    const rejected = await callApi(ctx3.routes[0].handler, { path: `${API_PREFIX}/state` })
+    assert.equal(rejected.status, 401, 'connection 说未认证就必须拒绝')
+    assert.deepEqual(seen, [`${API_PREFIX}/state`])
+
+    // 注入行出错只让这次没有动画，不能把 DSH 的 index 渲染带崩
+    const ctx4 = fakeContext()
+    await module.apply(ctx4, {})
+    const bad = []
+    bad.push = () => {
+      throw new Error('boom')
+    }
+    assert.doesNotThrow(() => ctx4.emit('webserver/index-inject', bad))
+    assert.ok(ctx4.logs.some(([level, message]) => level === 'warn' && message.includes('boom')))
     rmSync(home2, { recursive: true, force: true })
   } finally {
     if (previousHome === undefined) delete process.env.DSH_HOME

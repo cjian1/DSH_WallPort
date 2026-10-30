@@ -9,15 +9,18 @@
  * - 全部写入走「临时文件 + rename」，避免开机那一刻读到半个 JSON；
  * - 任何一次读失败都退回默认值，任何一次写失败都退回内存，
  *   插件绝不因为磁盘问题把 DSH 的启动流程带崩；
+ * - 没能落盘的改动在本进程内优先于磁盘上的旧文件（只读目录里也能切模板）；
+ * - 模板文件按 mtime/size/inode 缓存解析结果：文件没变就不重复读盘 + 校验，
+ *   改了（包括手工编辑）下次读取立刻生效；
  * - 目录可由测试注入，默认目录用 @deepseek-ai/dsh-home-paths 解析
  *   （解析不到时依次退回 $DSH_HOME、~/.dsh）。
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { DEFAULTS, LIMITS, STATE_VERSION, TEMPLATE_ID_PATTERN } from '../shared/constants.js'
+import { DEFAULTS, DURATION_RANGE, LIMITS, STATE_VERSION, TEMPLATE_ID_PATTERN } from '../shared/constants.js'
 import { normalizeTemplate, normalizeTemplateId } from '../shared/validate.js'
 
 /**
@@ -83,8 +86,8 @@ export function normalizeSettings(input, defaults = DEFAULTS) {
     version: STATE_VERSION,
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : defaults.enabled,
     template: typeof raw.template === 'string' && raw.template.trim() !== '' ? raw.template.trim() : defaults.template,
-    minDurationMs: clampNumber(raw.minDurationMs, { min: 0, max: 60000, fallback: defaults.minDurationMs }),
-    maxDurationMs: clampNumber(raw.maxDurationMs, { min: 0, max: 60000, fallback: defaults.maxDurationMs }),
+    minDurationMs: clampNumber(raw.minDurationMs, { ...DURATION_RANGE, fallback: defaults.minDurationMs }),
+    maxDurationMs: clampNumber(raw.maxDurationMs, { ...DURATION_RANGE, fallback: defaults.maxDurationMs }),
     skippable: typeof raw.skippable === 'boolean' ? raw.skippable : defaults.skippable,
   }
   if (settings.maxDurationMs < settings.minDurationMs) settings.maxDurationMs = settings.minDurationMs
@@ -110,11 +113,23 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
   }
   const statePath = join(baseDir, 'state.json')
   const templatesDir = join(baseDir, 'templates')
-  /** 磁盘不可用时的内存兜底，保证本次进程内功能仍然完整。 */
-  const memory = { state: normalizeSettings({}, defaults), templates: new Map(), degraded: false }
+  /**
+   * 磁盘不可用时的内存兜底，保证本次进程内功能仍然完整：
+   * - state：最近一次写入的设置；stateUnsaved 为 true 时（没能落盘）读设置以它为准，
+   *   否则磁盘上的旧 state.json 会把刚做的改动「吃掉」；
+   * - templates：没能落盘的模板，覆盖磁盘上的同名旧文件；
+   * - removed：没能从磁盘删掉的模板 id，读的时候当作已删除。
+   */
+  const memory = {
+    state: normalizeSettings({}, defaults),
+    stateUnsaved: false,
+    templates: new Map(),
+    removed: new Set(),
+  }
+  /** 模板文件的解析缓存：id → { key: mtime/size/inode, template }（损坏的文件缓存为 undefined）。 */
+  const parsed = new Map()
 
   const warn = (error) => {
-    memory.degraded = true
     logger?.warn?.(`[dsh-wallport] 状态目录不可写（${baseDir}）：${error?.message ?? error}`)
   }
 
@@ -124,8 +139,13 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
 
   function writeJson(path, value) {
     const tmp = `${path}.tmp-${process.pid}-${Date.now()}`
-    writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-    renameSync(tmp, path)
+    try {
+      writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+      renameSync(tmp, path)
+    } catch (error) {
+      rmSync(tmp, { force: true })
+      throw error
+    }
   }
 
   function readStateFile() {
@@ -137,35 +157,71 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
   }
 
   function readTemplateFile(id) {
+    const path = join(templatesDir, `${id}.json`)
+    let key
     try {
-      const raw = JSON.parse(readFileSync(join(templatesDir, `${id}.json`), 'utf8'))
-      return normalizeTemplate({ ...raw, id }, { requireDocument: true })
+      const stat = statSync(path)
+      key = `${stat.mtimeMs}:${stat.size}:${stat.ino}`
     } catch {
+      parsed.delete(id)
       return undefined
     }
+    const hit = parsed.get(id)
+    if (hit !== undefined && hit.key === key) return hit.template
+    let template
+    try {
+      const raw = JSON.parse(readFileSync(path, 'utf8'))
+      template = normalizeTemplate({ ...raw, id }, { requireDocument: true })
+    } catch {
+      template = undefined
+    }
+    parsed.set(id, { key, template })
+    return template
   }
 
-  return {
+  /** 模板目录里形状合法的 id（不读内容）。 */
+  function templateFileIds() {
+    let names
+    try {
+      names = readdirSync(templatesDir)
+    } catch {
+      return []
+    }
+    const ids = []
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      const id = name.slice(0, -'.json'.length)
+      if (TEMPLATE_ID_PATTERN.test(id)) ids.push(id)
+    }
+    return ids
+  }
+
+  const store = {
     baseDir,
     statePath,
     templatesDir,
     /** 旧目录迁移来源（没有迁移时为 undefined），日志与测试用。 */
     migratedFrom,
 
-    /** 当前生效设置（磁盘优先，读不到用默认值）。 */
+    /** 当前生效设置（磁盘优先，读不到用默认值；最近一次写入没能落盘时以内存为准）。 */
     readSettings() {
-      const fromDisk = readStateFile()
-      return fromDisk === undefined ? { ...memory.state } : normalizeSettings({ ...memory.state, ...fromDisk }, defaults)
+      if (!memory.stateUnsaved) {
+        const fromDisk = readStateFile()
+        if (fromDisk !== undefined) return normalizeSettings({ ...memory.state, ...fromDisk }, defaults)
+      }
+      return { ...memory.state }
     },
 
     /** 覆盖若干设置项并落盘。 */
     writeSettings(patch) {
-      const next = normalizeSettings({ ...this.readSettings(), ...patch }, defaults)
+      const next = normalizeSettings({ ...store.readSettings(), ...patch }, defaults)
       memory.state = next
       try {
         ensureDir()
         writeJson(statePath, next)
+        memory.stateUnsaved = false
       } catch (error) {
+        memory.stateUnsaved = true
         warn(error)
       }
       return next
@@ -173,24 +229,14 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
 
     /** 所有自定义模板（按 id 排序，损坏的文件直接跳过）。 */
     listTemplates() {
-      let names = []
-      try {
-        names = readdirSync(templatesDir).filter((name) => name.endsWith('.json'))
-      } catch {
-        names = []
-      }
-      const out = []
-      for (const name of names) {
-        const id = name.slice(0, -'.json'.length)
-        if (!TEMPLATE_ID_PATTERN.test(id)) continue
+      const byId = new Map()
+      for (const id of templateFileIds()) {
+        if (memory.removed.has(id)) continue
         const template = readTemplateFile(id)
-        if (template !== undefined) out.push(template)
+        if (template !== undefined) byId.set(id, template)
       }
-      for (const template of memory.templates.values()) {
-        if (!out.some((item) => item.id === template.id)) out.push(template)
-      }
-      out.sort((a, b) => a.id.localeCompare(b.id))
-      return out
+      for (const [id, template] of memory.templates) byId.set(id, template)
+      return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
     },
 
     getTemplate(id) {
@@ -200,28 +246,33 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
       } catch {
         return undefined
       }
-      return readTemplateFile(safeId) ?? memory.templates.get(safeId)
+      if (memory.templates.has(safeId)) return memory.templates.get(safeId)
+      if (memory.removed.has(safeId)) return undefined
+      return readTemplateFile(safeId)
     },
 
     /** 新建/覆盖一个自定义模板。 */
     saveTemplate(input) {
       const template = normalizeTemplate(input, { requireDocument: true })
-      const existing = this.listTemplates()
+      const existing = store.listTemplates()
       if (!existing.some((item) => item.id === template.id) && existing.length >= LIMITS.customTemplates) {
         throw new Error(`自定义模板数量已达上限（${LIMITS.customTemplates}）`)
       }
-      const record = { ...template, source: template.source ?? 'user' }
-      memory.templates.set(record.id, record)
+      // 存进来的永远是自定义模板：source 只有 ai / user 两种
+      const record = { ...template, source: template.source === 'ai' ? 'ai' : 'user' }
+      memory.removed.delete(record.id)
       try {
         ensureDir()
         writeJson(join(templatesDir, `${record.id}.json`), record)
+        memory.templates.delete(record.id)
       } catch (error) {
+        memory.templates.set(record.id, record)
         warn(error)
       }
       return record
     },
 
-    /** 删除一个自定义模板；返回是否真的删掉了。 */
+    /** 删除一个自定义模板；返回它原本是否存在。 */
     removeTemplate(id) {
       let safeId
       try {
@@ -229,19 +280,23 @@ export async function createStore({ dir, home, defaults = DEFAULTS, logger } = {
       } catch {
         return false
       }
-      const had = memory.templates.delete(safeId)
+      const had = store.getTemplate(safeId) !== undefined
+      memory.templates.delete(safeId)
       try {
         rmSync(join(templatesDir, `${safeId}.json`), { force: true })
-        return true
+        memory.removed.delete(safeId)
+        parsed.delete(safeId)
       } catch (error) {
+        memory.removed.add(safeId)
         warn(error)
-        return had
       }
+      return had
     },
 
-    /** 磁盘不可用（已退回内存）时为 true，用于工具输出里如实说明。 */
+    /** 有改动只存在内存里（没能落盘）时为 true，用于设置页与工具输出里如实说明。 */
     get degraded() {
-      return memory.degraded
+      return memory.stateUnsaved || memory.templates.size > 0 || memory.removed.size > 0
     },
   }
+  return store
 }

@@ -76,6 +76,11 @@ window.__ModuleLoader__.load({
       importPlaceholder: '{"id":"my-boot","name":"我的开机动画","document":"<!doctype html>…"}',
       import: '导入并启用',
       importFailed: '导入失败',
+      importBadJson: '看起来是 JSON，但解析失败（检查引号与逗号）',
+      importedName: '导入的开机动画',
+      copyFailed: '复制失败：剪贴板不可用，请在上面的提示词框里手动全选复制',
+      overrides: '覆盖内置',
+      overridesHint: '这个自定义模板占用了内置模板的 id；删除后恢复内置版本。',
       previewTitle: '预览',
       openInTab: '在新标签打开',
       close: '关闭',
@@ -136,6 +141,11 @@ window.__ModuleLoader__.load({
       importPlaceholder: '{"id":"my-boot","name":"My boot","document":"<!doctype html>…"}',
       import: 'Import and enable',
       importFailed: 'Import failed',
+      importBadJson: 'This looks like JSON but does not parse (check quotes and commas)',
+      importedName: 'Imported boot animation',
+      copyFailed: 'Copy failed: the clipboard is unavailable — select the prompt above and copy it manually',
+      overrides: 'Overrides built-in',
+      overridesHint: 'This custom template uses a built-in id; deleting it restores the built-in version.',
       previewTitle: 'Preview',
       openInTab: 'Open in new tab',
       close: 'Close',
@@ -194,6 +204,52 @@ window.__ModuleLoader__.load({
 .dshba-pre-empty{font-family:inherit;color:var(--dsw-alias-label-dimmed,#7c828a)}
 .dshba-pre{margin:8px 0 0;padding:10px 12px;max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--ds-font-family-code,ui-monospace,Menlo,Consolas,monospace);font-size:11.5px;line-height:18px;background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.05));border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:var(--dsw-radius-sm,8px);color:var(--dsw-alias-label-secondary,#c3c8cf)}
 `
+
+    /**
+     * 模板名/描述可能是纯字符串（AI 工具存的就是字符串），也可能是 { zh, en }：
+     * 交给宿主按当前语言挑（resolveText），拿不到再按浏览器语言自己挑。
+     */
+    function makeText(locale) {
+      return (value) => {
+        if (value === undefined || value === null) return ''
+        if (typeof value === 'string') return value
+        let picked
+        try {
+          picked = locale && typeof locale.resolveText === 'function' ? locale.resolveText(value) : undefined
+        } catch (error) {
+          picked = undefined
+        }
+        if (typeof picked === 'string' && picked !== '') return picked
+        const zhFirst = typeof navigator === 'undefined' || !navigator.language || navigator.language.indexOf('zh') === 0
+        return (zhFirst ? value.zh || value.en : value.en || value.zh) || ''
+      }
+    }
+
+    /** 复制到剪贴板：优先 Clipboard API；不可用（非安全上下文 / 被拒）时退回 execCommand。 */
+    async function copyToClipboard(text) {
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text)
+          return
+        }
+      } catch (error) {
+        // 走下面的退路
+      }
+      const area = document.createElement('textarea')
+      area.value = text
+      area.setAttribute('readonly', '')
+      area.style.position = 'fixed'
+      area.style.opacity = '0'
+      document.body.appendChild(area)
+      area.select()
+      let ok = false
+      try {
+        ok = document.execCommand('copy')
+      } finally {
+        document.body.removeChild(area)
+      }
+      if (!ok) throw new Error('clipboard unavailable')
+    }
 
     /** 统一的 fetch 包装：非 2xx 抛错，错误信息来自服务端。 */
     async function api(path, body) {
@@ -264,6 +320,7 @@ window.__ModuleLoader__.load({
 
     function BootAnimationSettings(props) {
       const t = props.t
+      const text = props.text || makeText(undefined)
       const [snapshot, setSnapshot] = useState(null)
       const [error, setError] = useState('')
       const [notice, setNotice] = useState('')
@@ -275,6 +332,7 @@ window.__ModuleLoader__.load({
       const [importText, setImportText] = useState('')
       const [importError, setImportError] = useState('')
       const [copied, setCopied] = useState('')
+      const [copyError, setCopyError] = useState('')
       const loaded = useRef(false)
 
       const load = useCallback(async () => {
@@ -299,12 +357,13 @@ window.__ModuleLoader__.load({
         try {
           await api('/settings', body)
           await load()
+          setNotice(t('saved'))
         } catch (err) {
           setError(err.message || String(err))
         } finally {
           setBusy('')
         }
-      }, [load])
+      }, [load, t])
 
       const applyTemplate = useCallback(async (id) => {
         setBusy(`apply:${id}`)
@@ -335,17 +394,23 @@ window.__ModuleLoader__.load({
 
       const importTemplate = useCallback(async () => {
         setImportError('')
-        const text = importText.trim()
-        if (text === '') return
+        const raw = importText.trim()
+        if (raw === '') return
         let payload
-        try {
-          payload = JSON.parse(text)
-        } catch (err) {
-          // 允许直接粘贴一段 HTML：自动补一个 id
+        if (/^[[{]/.test(raw)) {
+          try {
+            payload = JSON.parse(raw)
+          } catch (err) {
+            // 看起来是 JSON 却解析不了：多半是少了引号或逗号，别把它当成 HTML 存进去
+            setImportError(`${t('importBadJson')}: ${err.message || String(err)}`)
+            return
+          }
+        } else {
+          // 直接粘贴的一段 HTML：自动补一个 id
           payload = {
             id: `custom-${Date.now().toString(36)}`,
-            name: 'Imported boot animation',
-            document: text,
+            name: t('importedName'),
+            document: raw,
           }
         }
         if (payload !== null && typeof payload === 'object' && payload.document === undefined && typeof payload.html === 'string') {
@@ -361,7 +426,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy('')
         }
-      }, [importText, load])
+      }, [importText, load, t])
 
       const settings = snapshot ? snapshot.settings : null
       const templates = snapshot ? snapshot.templates : []
@@ -375,16 +440,17 @@ window.__ModuleLoader__.load({
         return [t('aiPromptIntro'), '', `${t('aiPromptWantLabel')}${want}`, '', t('aiPromptRules')].join('\n')
       }, [t, idea])
 
-      const copyText = useCallback(async (text) => {
+      const copyText = useCallback(async (value) => {
+        setCopyError('')
         try {
-          await navigator.clipboard.writeText(text)
-          setCopied(text)
+          await copyToClipboard(value)
+          setCopied(value)
           setTimeout(() => setCopied(''), 1600)
         } catch (err) {
-          // 剪贴板不可用时也要让人能用：提示词在下方代码框里可以手动选中复制。
-          setImportError(String(err))
+          // 剪贴板不可用时也要让人能用：提示词就在上面的框里，可以手动选中复制。
+          setCopyError(t('copyFailed'))
         }
-      }, [])
+      }, [t])
 
       return h('div', { className: 'dshba-root' },
         h('style', null, CSS),
@@ -412,6 +478,8 @@ window.__ModuleLoader__.load({
                 label: t('minDuration'),
                 hint: t('minDurationHint'),
               }, h('input', {
+                // 非受控输入：用保存后的值当 key，服务端夹紧/联动（max 跟着 min 抬高）后框里显示真实值
+                key: `min-${settings.minDurationMs}`,
                 className: 'dshba-input',
                 type: 'number',
                 min: 0,
@@ -431,6 +499,7 @@ window.__ModuleLoader__.load({
                 label: t('maxDuration'),
                 hint: t('maxDurationHint'),
               }, h('input', {
+                key: `max-${settings.maxDurationMs}`,
                 className: 'dshba-input',
                 type: 'number',
                 min: 0,
@@ -468,11 +537,14 @@ window.__ModuleLoader__.load({
                   'data-active': template.active ? 'true' : 'false',
                 },
                   h('div', { className: 'dshba-tplName' },
-                    h('span', null, (template.name && (template.name.zh || template.name.en)) || template.id),
+                    h('span', null, text(template.name) || template.id),
                     h('span', { className: 'dshba-badge' }, template.builtin ? t('builtin') : t('custom')),
+                    template.overridesBuiltin
+                      ? h('span', { className: 'dshba-badge', title: t('overridesHint') }, t('overrides'))
+                      : null,
                     template.active ? h('span', { className: 'dshba-badge', 'data-kind': 'brand' }, t('inUse')) : null,
                   ),
-                  h('div', { className: 'dshba-tplDesc' }, (template.description && (template.description.zh || template.description.en)) || ''),
+                  h('div', { className: 'dshba-tplDesc' }, text(template.description)),
                   h('div', { className: 'dshba-tplMeta' }, `${template.id} · ${(template.documentBytes / 1024).toFixed(1)} KiB`),
                   h('div', { className: 'dshba-actions' },
                     h('button', {
@@ -554,6 +626,7 @@ window.__ModuleLoader__.load({
                 }, t('aiClear')),
                 h('span', { className: 'dshba-note' }, t('aiTools')),
               ),
+              copyError ? h('div', { className: 'dshba-err', style: { marginTop: '8px' } }, copyError) : null,
               h('p', { className: 'dshba-note', style: { marginTop: '10px' } }, t('aiGuide')),
               h('h4', { className: 'dshba-h2', style: { marginTop: '18px' } }, t('importTitle')),
               h('p', { className: 'dshba-sub' }, t('importHint')),
@@ -569,6 +642,7 @@ window.__ModuleLoader__.load({
                   type: 'button',
                   className: 'dshba-btn',
                   'data-variant': 'primary',
+                  'data-action': 'import',
                   disabled: busy !== '' || importText.trim() === '',
                   onClick: importTemplate,
                 }, t('import')),
@@ -578,7 +652,7 @@ window.__ModuleLoader__.load({
 
         preview ? h(PreviewModal, {
           id: preview.id,
-          name: (preview.name && (preview.name.zh || preview.name.en)) || preview.id,
+          name: text(preview.name) || preview.id,
           t,
           onClose: () => setPreview(null),
         }) : null,
@@ -588,13 +662,14 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-wallport: dictionaries')
       const t = ctx.locale.bind(NS)
+      const text = makeText(ctx.locale)
       ctx.slots.inject('settings.section', function* () {
         yield ctx.slots.register({
           name: 'settings.section',
           id: 'boot-animation',
           order: 40,
           label: () => t('nav'),
-          inject: () => ({ t }),
+          inject: () => ({ t, text }),
         }, BootAnimationSettings)
       })
     }

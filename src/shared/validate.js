@@ -62,7 +62,7 @@ export function textOf(value, locale = 'zh') {
   return value[locale] ?? value.zh ?? value.en ?? Object.values(value)[0] ?? ''
 }
 
-/** 模板 id：小写字母数字加连字符，且不能伪装成内置模板。 */
+/** 模板 id：小写字母数字加连字符（与内置模板同 id 的自定义模板会覆盖内置版本，删掉即恢复）。 */
 export function normalizeTemplateId(raw, { fallback } = {}) {
   const id = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
   if (id === '') {

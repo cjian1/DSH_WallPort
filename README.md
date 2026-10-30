@@ -46,9 +46,9 @@ DSH_WallPort 是一个 DSH 插件，它把这段画面换成你选的动画：
 | 🤖 **AI 原生** | 6 个 Agent 工具让 AI 直接生成/切换/预览模板，不用手写 HTML |
 | 📈 **真进度** | 读取 DSH 写在 `[data-dsh-boot-spinner]` 上的 `--dsh-boot-arc`，换算成 0–100% |
 | 🖥️ **两种承载都支持** | 桌面 App（`dsh-app://`）与 `dsh web`（本机 HTTP）走同一张注入表 |
-| 🛟 **不会锁死界面** | 应用挂载即淡出；启动报错立刻让路；超时兜底；随处点击可跳过；平时 `pointer-events:none` |
+| 🛟 **不会锁死界面** | 应用挂载即淡出；启动报错立刻让路；超时兜底；随处点击可跳过（那一下不会误点到底下的应用）；平时 `pointer-events:none` |
 | 🧩 **模板即 HTML** | 一个模板 = 一段自包含 HTML，AI 能写、你能改、能单独预览 |
-| 🧪 **有验证** | 34 个测试，其中两项直接执行 DSH 自己的注入渲染代码 |
+| 🧪 **有验证** | 48 个测试，其中 5 项直接对照本机安装的 DSH 代码（注入渲染、桌面注入解释器、启动视图契约、鉴权、安装解析） |
 
 ## 快速开始
 
@@ -197,7 +197,9 @@ AI 会调用 `boot_animation_list` → 写动画 → `boot_animation_save`（存
 
 桌面模式这条「只收集一次」是 DSH 自身的设计，所以运行时脚本还会做**一次同源核对**：
 注入行里带着当前模板的修订号（`rev`），页面加载时向 `…/api/active?rev=…` 问一次
-「现在生效的是不是这个」，不一致就把 iframe 热切换到新模板，并把最新时长/开关应用到正在播放的覆层上。
+「现在生效的是不是这个」，不一致就把 iframe 热切换到新模板（连同底色主题），并把最新时长/开关/能否跳过
+应用到正在播放的覆层上。为了不先闪一下旧模板，桌面模式下会先等这次核对（最多 250ms）再开播；
+web 模式的注入行是本次请求现渲染的，直接开播。
 
 ### 真实进度与退出条件
 
@@ -205,6 +207,9 @@ AI 会调用 `boot_animation_list` → 写动画 → `boot_animation_save`（存
   插件把它读出来换算成 0–100% 推给模板（`72deg` = 0%，`288deg` = 100%）；
 - **退出**（任意一条先到）：应用挂载完成（原生启动视图消失）· 用户点击/按键跳过 ·
   到达兜底时长 · **原生启动界面出现报错文案**（这一条保证我们绝不挡住错误信息）；
+  只有「应用挂载」会凑满最短展示时长，跳过 / 报错 / 超时都立刻淡出；
+- **跳过**：覆层还盖着界面时（包括应用已挂载、正在凑最短时长），用来跳过的那一下点击/按键会被吞掉，
+  不会顺带点到底下看不见的按钮；鼠标一动，右下角会亮出「点击任意处跳过」；
 - **兜底**：覆层平时 `pointer-events:none`，即使它异常停留，界面依然可点；淡出后把自己从 DOM 移除。
 
 ### 一次启动的时序
@@ -262,7 +267,8 @@ $DSH_HOME/dsh-wallport/
 优先级：`state.json` > 行 config。目录不可写时自动退回内存（设置页会提示「状态目录不可写」），
 插件绝不因为磁盘问题把 DSH 的启动流程带崩。
 
-插件还提供同源 JSON 接口（供设置页使用，也可自己脚本化）：
+插件还提供同源 JSON 接口（供设置页使用；鉴权与 DSH 自己的 `/api` 相同，脚本化调用要带上 DSH 的会话 cookie，
+POST 的请求体必须是 `application/json`）：
 
 ```text
 GET  /dsh-wallport-7f3a/api/state              设置 + 模板列表
@@ -277,7 +283,13 @@ POST /dsh-wallport-7f3a/api/remove             删自定义模板
 
 - **模板就是网页代码**，它在**同源 iframe** 里执行，权限级别等同于一个已安装的 DSH 插件。
   所以：只用你自己（或你信任的 AI 会话）生成的模板；**来源不明的模板先预览再启用**；
-- 设置页里的预览是沙箱化的（不透明源，只允许脚本）；「在新标签打开」会以普通页面打开同一份预览；
+- **插件接口只认 DSH 自己的会话**：`/dsh-wallport-7f3a/api/*` 的每个请求都先过 DSH 的 connection 服务
+  （与 DSH 内置路由同一套 Host/Origin 栅栏 + 会话 cookie；profile 里没有它时退回同源检查），
+  写接口只收 `application/json`——外站网页伪造不了「保存并启用模板」这类请求；
+- 预览永远是沙箱化的（不透明源，只允许脚本）：设置页里的 iframe 带 `sandbox`，预览接口本身也返回
+  `Content-Security-Policy: sandbox allow-scripts`，所以「在新标签打开」也一样读不到 DSH 页面的任何东西；
+- `boot_animation_preview` 只导出 `.html` 文件，相对路径落在插件的 `previews/` 目录，
+  也不会覆盖一个不是预览的已有文件（免得变成绕过 DSH 写文件审批的通道）；
 - **不联网、不收集数据**：动画不使用网络资源，设置与模板都只存在本机 `$DSH_HOME` 下；
   唯一的对外交互是你与 AI 的对话本身；
 - 体积/性能：单个模板上限 **512 KiB**；默认最短展示 1.2s、兜底 12s，到点一定让位给界面。
@@ -298,7 +310,7 @@ POST /dsh-wallport-7f3a/api/remove             删自定义模板
 ## 开发
 
 ```bash
-npm test                  # 34 个测试（等价于 `node --test`，不带目录参数）
+npm test                  # 48 个测试（等价于 `node --test`，不带目录参数）
 npm run check             # 全量语法检查
 npm run check:docs        # README 链接 / 模板清单 / 测试数量自检
 npm run check:all         # 上面三件事一起跑（CI 跑的就是它）
@@ -306,8 +318,8 @@ npm run preview           # 导出内置模板 + examples/ 的预览
 ```
 
 也可以不用 npm，直接 `node tools/xxx.mjs`。CI 在 `.github/workflows/checks.yml`，
-Node 20 / 22 / 24 各跑一遍；其中两项一致性测试需要本机装有 DSH（读它的 `app.asar`），
-在 CI 上会自动 skip 而不是失败（可用 `DSH_ASAR` 指定安装路径）。
+Node 20 / 22 / 24 各跑一遍；其中 5 项一致性测试需要本机装有 DSH（读它的 `app.asar`），
+在 CI 上会自动 skip；**装了 DSH 但代码形状对不上时会失败**而不是悄悄跳过（可用 `DSH_ASAR` 指定安装路径）。
 
 ### 目录结构
 
@@ -338,18 +350,18 @@ DSH_WallPort/
 
 | 文件 | 覆盖什么 |
 |---|---|
-| `test/conformance.test.mjs` | 从本机 `app.asar` 取出 DSH **自己的** `renderIndexInjections()`（宿主如何把注入行拼进 `index.html`）和 `hM()`（桌面前端如何应用注入表）来执行我们的行 —— DSH 升级后形状一变，测试立刻失败，而不是等用户看到黑屏 |
-| `test/runtime.test.mjs` | 用最小 DOM 打桩真实跑覆层生命周期：应用挂载 / 启动报错 / 跳过 / 超时 / 模板热切换 / 宿主说已关闭 / 核对请求失败 |
-| `test/entry.test.mjs` | 直接 import `index.js` 并用假 ctx 跑 `apply()`：注入行、HTTP 路由、6 个工具、非法配置兜底 |
+| `test/conformance.test.mjs` | 从本机 `app.asar` 取出 DSH **自己的** `renderIndexInjections()`（宿主如何把注入行拼进 `index.html`）和桌面前端的注入表解释器（压缩后的函数名每版都变，按 `index.html` 与代码形状定位）来执行我们的行；再核对覆层依赖的启动视图契约（`data-dsh-boot` / `--dsh-boot-arc` / 失败文案 / ui-renderer 接手）与 `connection.requestRejection()` —— DSH 升级后形状一变，测试立刻失败，而不是等用户看到黑屏 |
+| `test/runtime.test.mjs` | 用最小 DOM 打桩真实跑覆层生命周期：应用挂载（含快过一次轮询的启动）/ 启动报错 / 跳过（凑最短时长时也能跳、那一下不误点）/ 超时 / 模板与主题热切换 / 宿主说已关闭或不可跳过 / 核对失败或无回音 / 文档加载后补推状态；外加桥接的 `reduced()` / `ready` 与预览模拟器 |
+| `test/entry.test.mjs` | 直接 import `index.js` 并用假 ctx 跑 `apply()`：注入行、HTTP 路由（走 DSH connection 鉴权）、6 个工具、非法配置兜底、注入行出错不连累 DSH |
 | `test/client.test.mjs` | 在沙箱里按 `window.__ModuleLoader__.load()` 契约执行 `client.js`：模块面、`settings.section` 注册、设置页渲染、**输入框真的能打字**、提示词内容、文案 key 无遗漏 |
-| `test/unit.test.mjs` | 模板校验、状态仓（含目录不可写兜底）、服务、HTTP 接口 |
+| `test/unit.test.mjs` | 模板校验、状态仓（含目录不可写 / 只读目录兜底、解析缓存）、服务（含覆盖内置模板的删除）、HTTP 接口（含跨站与非 JSON 请求被拒、预览沙箱头）、预览工具的落点限制 |
 
 ### 加一个内置模板（三步）
 
 1. 在 `src/host/templates/` 新建 `<id>.js`，导出 `{ id, name:{zh,en}, description:{zh,en}, theme, document }`，
    `document` 就是一段自包含 HTML（可以直接抄 `examples/minimal-template.html`）；
 2. 在 `src/host/templates/index.js` 里 import 并加进 `BUILTIN_TEMPLATES`（数组顺序 = 设置页顺序）；
-3. `node --test test/` → `node tools/preview.mjs --examples` → 刷新页面即可在画廊里看到。
+3. `npm test` → `node tools/preview.mjs --examples` → 刷新页面即可在画廊里看到。
 
 ## 常见问题
 
@@ -412,7 +424,7 @@ DSH_WallPort/
 **改完东西怎么发**：
 
 ```bash
-npm run check:all        # 语法 + 34 个测试 + 文档自检，全绿再提交
+npm run check:all        # 语法 + 48 个测试 + 文档自检，全绿再提交
 git add -A
 git commit -m "feat: ..."
 git push                 # CI（.github/workflows/checks.yml）会自动跑同一套检查
@@ -508,8 +520,10 @@ The agent path is `plugin_manager(action: "install_bundle", target: "https://git
 A template is just one self-contained HTML file — see [`examples/minimal-template.html`](examples/minimal-template.html)
 for an annotated skeleton, and [`docs/AI-自定义指南.md`](docs/AI-自定义指南.md) (Chinese) for the walkthrough.
 
-Verified with 34 tests; two of them execute DSH's own injection-rendering code extracted from `app.asar`
-(`renderIndexInjections()` for `dsh web`, `hM()` for the desktop shell).
+Verified with 48 tests; five of them run against the DSH code in your local `app.asar`
+(`renderIndexInjections()` for `dsh web`, the desktop shell's injection interpreter, the boot-view contract,
+`connection.requestRejection()` and `parseInstallSpec()`). The plugin's HTTP API is guarded by DSH's own
+session check, and previews always run sandboxed.
 
 ## License
 

@@ -2,7 +2,22 @@
 <html lang="zh-CN">
 <head><script>(function bootBridge(name) {
   var listeners = {}
-  var state = { progress: 0, elapsed: 0, phase: 'boot', ready: false, visible: true, reduced: false, done: false }
+  var media = null
+  try {
+    media = window.matchMedia('(prefers-reduced-motion: reduce)')
+  } catch (error) {
+    media = null
+  }
+  var state = {
+    progress: 0,
+    elapsed: 0,
+    phase: 'boot',
+    ready: false,
+    visible: true,
+    // 在 iframe 里自己读：模板脚本在文档解析时就会调 reduced()，那时宿主还来不及推任何东西。
+    reduced: Boolean(media && media.matches),
+    done: false,
+  }
 
   function on(event, fn) {
     if (typeof fn !== 'function') return function () {}
@@ -21,7 +36,7 @@
       try {
         list[i](value, state)
       } catch (error) {
-        if (window.console && window.console.error) window.console.error('[boot-animation] listener failed:', error)
+        if (window.console && window.console.error) window.console.error('[dsh-wallport] listener failed:', error)
       }
     }
   }
@@ -53,15 +68,27 @@
     _set: function (key, value) {
       if (state[key] === value) return
       state[key] = value
-      if (key === 'phase' && value === 'done') {
+      if (key === 'phase' && value === 'done') state.done = true
+      fire(key, value)
+      // ready 只在「没就绪 → 就绪」那一下触发一次（进度到 100% 与覆层收尾都会走到这里）
+      if (!state.ready && (state.done || state.progress >= 1)) {
         state.ready = true
-        state.done = true
         fire('ready', true)
       }
-      if (key === 'progress') state.ready = state.ready || value >= 1
-      fire(key, value)
-      if (key === 'progress' && value >= 1) fire('ready', true)
     },
+  }
+
+  // 用户中途改了「减少动效」也跟上
+  if (media) {
+    var onReducedChange = function (event) {
+      api._set('reduced', Boolean(event && event.matches))
+    }
+    try {
+      if (typeof media.addEventListener === 'function') media.addEventListener('change', onReducedChange)
+      else if (typeof media.addListener === 'function') media.addListener(onReducedChange)
+    } catch (error) {
+      /* 老引擎不支持监听：保持初始值 */
+    }
   }
 
   window[name] = api
@@ -70,12 +97,28 @@
   if (!bridge) return
   var cycleMs = (options && options.cycleMs) || 2600
   var holdMs = (options && options.holdMs) || 900
+  var loop = !options || options.loop !== false
   var period = cycleMs + holdMs
   var startedAt = Date.now()
+  var cycle = 0
   bridge._set('phase', 'preview')
 
   function frame() {
-    var t = (Date.now() - startedAt) % period
+    var elapsed = Date.now() - startedAt
+    if (!loop && elapsed >= cycleMs) {
+      // 只播一遍：停在「启动完成」的样子
+      bridge._set('elapsed', cycleMs)
+      bridge._set('progress', 1)
+      bridge._set('visible', false)
+      return
+    }
+    var index = Math.floor(elapsed / period)
+    if (index !== cycle) {
+      // 新一轮：让 ready 能再触发一次，模板的「就绪」效果每轮都看得到
+      cycle = index
+      bridge.state.ready = false
+    }
+    var t = elapsed % period
     if (t <= cycleMs) {
       var p = Math.min(1, t / cycleMs)
       var eased = 1 - Math.pow(1 - p, 2.2)

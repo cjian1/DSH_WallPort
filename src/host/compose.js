@@ -19,30 +19,50 @@ import { BRIDGE_NAME, OVERLAY_ATTR, OVERLAY_ID } from '../shared/constants.js'
 import { asFullDocument, jsonForScript } from '../shared/validate.js'
 import { bootBridge, bootOverlayRuntime, bootPreviewSimulator } from './runtime.js'
 
-/** 覆层外壳样式：只负责「盖住 + 淡出 + 跳过按钮」，动画细节全在模板文档里。 */
-export function overlayCss({ theme = 'dark' } = {}) {
-  const base = theme === 'light' ? '#f7f4ec' : '#05070d'
-  const hintColor = theme === 'light' ? 'rgba(20,20,26,.55)' : 'rgba(255,255,255,.55)'
-  const hintBg = theme === 'light' ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.32)'
-  const hintBorder = theme === 'light' ? 'rgba(20,20,26,.14)' : 'rgba(255,255,255,.14)'
+/** 覆层的两套配色：底色（模板文档加载出来之前/淡出时露出的颜色）与跳过提示。 */
+const OVERLAY_THEMES = {
+  dark: { base: '#05070d', hint: 'rgba(255,255,255,.55)', hintBg: 'rgba(0,0,0,.32)', hintBorder: 'rgba(255,255,255,.14)' },
+  light: { base: '#f7f4ec', hint: 'rgba(20,20,26,.55)', hintBg: 'rgba(255,255,255,.72)', hintBorder: 'rgba(20,20,26,.14)' },
+}
+
+/** 统一成两种主题之一。 */
+export function overlayTheme(theme) {
+  return theme === 'light' ? 'light' : 'dark'
+}
+
+/**
+ * 覆层外壳样式：只负责「盖住 + 淡出 + 跳过按钮」，动画细节全在模板文档里。
+ * 两套配色都在里面，由容器上的 data-dshba-theme 选择——桌面模式热切换到另一种主题的模板时，
+ * 运行时只要改这个属性，不需要重新注入样式。
+ */
+export function overlayCss() {
+  const id = `#${OVERLAY_ID}`
+  const palette = (name) => {
+    const colors = OVERLAY_THEMES[name]
+    const scope = name === 'dark' ? id : `${id}[data-dshba-theme="${name}"]`
+    return `${scope}{background:${colors.base}}${scope} .dshba-skip{color:${colors.hint};background:${colors.hintBg};border-color:${colors.hintBorder}}`
+  }
   return [
-    `#${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483000;pointer-events:none;`,
-    `opacity:1;transition:opacity .46s ease;background:${base}}`,
-    `#${OVERLAY_ID}[data-dshba-state="leaving"]{opacity:0}`,
-    `#${OVERLAY_ID} .dshba-frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}`,
-    `#${OVERLAY_ID} .dshba-skip{position:absolute;right:18px;bottom:16px;pointer-events:auto;cursor:pointer;`,
+    `${id}{position:fixed;inset:0;z-index:2147483000;pointer-events:none;opacity:1;transition:opacity .46s ease}`,
+    `${id}[data-dshba-state="leaving"]{opacity:0}`,
+    `${id} .dshba-frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}`,
+    `${id} .dshba-skip{position:absolute;right:18px;bottom:16px;pointer-events:auto;cursor:pointer;`,
     `font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`,
-    `color:${hintColor};background:${hintBg};border:1px solid ${hintBorder};border-radius:999px;padding:5px 12px;`,
-    `opacity:0;transition:opacity .2s ease}`,
-    `#${OVERLAY_ID}:hover .dshba-skip{opacity:1}`,
-    `#${OVERLAY_ID} .dshba-skip:focus-visible{opacity:1;outline:2px solid #4d6bfe;outline-offset:2px}`,
-    `@media (prefers-reduced-motion: reduce){#${OVERLAY_ID}{transition:none}}`,
+    `border:1px solid;border-radius:999px;padding:5px 12px;opacity:0;transition:opacity .2s ease}`,
+    palette('dark'),
+    palette('light'),
+    // 覆层平时 pointer-events:none，:hover 只在指针恰好落在按钮上时才成立；
+    // 所以运行时在指针移动时给容器打上 data-dshba-hint，让提示真的看得见。
+    `${id}:hover .dshba-skip,${id}[data-dshba-hint] .dshba-skip{opacity:1}`,
+    `${id} .dshba-skip:focus-visible{opacity:1;outline:2px solid #4d6bfe;outline-offset:2px}`,
+    `@media (prefers-reduced-motion: reduce){${id},${id} .dshba-skip{transition:none}}`,
   ].join('')
 }
 
 /** 覆层容器：内容（iframe）由运行时脚本创建。 */
-export function overlayHtml(templateId) {
-  return `<div id="${OVERLAY_ID}" ${OVERLAY_ATTR}="${String(templateId).replaceAll('"', '')}" aria-hidden="true"></div>`
+export function overlayHtml(templateId, theme = 'dark') {
+  const id = String(templateId).replaceAll('"', '')
+  return `<div id="${OVERLAY_ID}" ${OVERLAY_ATTR}="${id}" data-dshba-theme="${overlayTheme(theme)}" aria-hidden="true"></div>`
 }
 
 /**
@@ -76,6 +96,7 @@ export function injectBridge(html, { bridgeName = BRIDGE_NAME, extras = [] } = {
 export function composeRuntimeScript({ template, settings, bridgeName = BRIDGE_NAME, api }) {
   const cfg = {
     templateId: template.id,
+    theme: overlayTheme(template.theme),
     overlayId: OVERLAY_ID,
     bridgeName,
     document: injectBridge(template.document, { bridgeName }),
@@ -112,8 +133,8 @@ export function composeRuntimeDocument(template, { bridgeName = BRIDGE_NAME } = 
 /** 组装注入行。 */
 export function composeInjectionRows({ template, settings, api }) {
   return [
-    { kind: 'style', text: overlayCss({ theme: template.theme }) },
-    { kind: 'html', placement: 'body', html: overlayHtml(template.id) },
+    { kind: 'style', text: overlayCss() },
+    { kind: 'html', placement: 'body', html: overlayHtml(template.id, template.theme) },
     { kind: 'script', placement: 'body', text: composeRuntimeScript({ template, settings, api }) },
   ]
 }

@@ -290,7 +290,8 @@ test('client.js：模块系统契约与设置分区注册', () => {
   assert.equal(registration.label(), '开机动画')
   assert.equal(typeof registration.component, 'function')
   assert.equal(typeof registration.inject, 'function')
-  assert.deepEqual(Object.keys(registration.inject()), ['t'])
+  assert.deepEqual(Object.keys(registration.inject()), ['t', 'text'])
+  assert.equal(registration.inject().text('纯字符串名'), '纯字符串名')
 })
 
 test('client.js：设置页渲染出开关、模板画廊与「用 AI 自定义」', () => {
@@ -402,4 +403,46 @@ test('client.js：代码里用到的每个文案 key 都在中英文字典里', 
 test('client.js：还没加载完时显示加载提示而不是崩掉', () => {
   const ui = mountSettings(null)
   assert.ok(ui.text().includes('正在读取开机动画设置'), '加载中应显示提示')
+})
+
+test('client.js：AI 存的纯字符串名字照常显示；覆盖内置的模板有标记、能删；坏 JSON 不会被当成 HTML 导入', () => {
+  const ui = mountSettings({
+    ...SNAPSHOT,
+    templates: [
+      ...SNAPSHOT.templates,
+      {
+        id: 'neon-night',
+        name: '霓虹之夜',
+        description: 'AI 生成的赛博霓虹',
+        theme: 'dark',
+        builtin: false,
+        overridesBuiltin: false,
+        active: false,
+        source: 'ai',
+        documentBytes: 4096,
+      },
+      {
+        id: 'orbit',
+        name: '我的轨道',
+        description: { zh: '改过的轨道粒子' },
+        theme: 'dark',
+        builtin: false,
+        overridesBuiltin: true,
+        active: false,
+        source: 'ai',
+        documentBytes: 2048,
+      },
+    ],
+  })
+  const strings = ui.strings()
+  assert.ok(strings.includes('霓虹之夜'), '字符串名字应原样显示，而不是退化成 id')
+  assert.ok(strings.includes('AI 生成的赛博霓虹'), '字符串描述也应显示')
+  assert.ok(strings.includes('覆盖内置'), '覆盖了内置 id 的模板应有标记')
+  assert.ok(strings.includes('删除'), '覆盖内置的自定义模板可以删除')
+
+  ui.type('dshba-textarea', '{"id": "broken", "document": "<p>x</p>",}')
+  ui.findAction('import').props.onClick()
+  const text = ui.text()
+  assert.ok(text.includes('看起来是 JSON'), `坏 JSON 应提示解析失败，实际：${text.slice(-200)}`)
+  assert.ok(ui.valueOf('dshba-textarea').includes('broken'), '解析失败时保留输入，方便改')
 })

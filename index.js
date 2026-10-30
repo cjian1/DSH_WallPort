@@ -16,7 +16,7 @@
  */
 
 import { DEFAULTS, DISPLAY_NAME, DURATION_RANGE, ROUTE_PREFIX } from './src/shared/constants.js'
-import { createApiHandler } from './src/host/api.js'
+import { createApiHandler, sameOriginRejection } from './src/host/api.js'
 import { createBootAnimationService } from './src/host/service.js'
 import { registerTools } from './src/host/tools.js'
 
@@ -68,80 +68,96 @@ function normalizeConfig(config, logger) {
 }
 
 /**
+ * HTTP 路由的访问检查。
+ *
+ * 优先用 DSH 自己的 connection 服务：它给 DSH 内置路由做同一件事（Host/Origin 栅栏 +
+ * 浏览器会话 cookie），设置页与桌面壳转发的请求天然带着这些凭据。它不是硬依赖
+ * （DSH 的 inject 只有必选形式），所以每次请求用 ctx.get 现取；拿不到就退回同源检查。
+ * connection 自己抛错时按拒绝处理——宁可设置页暂时用不了，也不放外站进来写模板。
+ */
+function authorizeRequest(ctx, req) {
+  const connection = typeof ctx.get === 'function' ? ctx.get('connection') : undefined
+  if (typeof connection?.requestRejection !== 'function') return sameOriginRejection(req)
+  try {
+    return connection.requestRejection(req)
+  } catch (error) {
+    ctx.logger?.warn?.(`[dsh-wallport] connection.requestRejection 抛错，按拒绝处理：${error?.message ?? error}`)
+    return 403
+  }
+}
+
+/**
  * 挂载插件。
+ *
+ * 是 async 的：等服务就绪才返回，插件的 fiber 也就此时才算激活。桌面模式下宿主在
+ * 所有插件激活后只收集**一次**注入表——早于就绪返回的话，那一次可能拿不到我们的行，
+ * 整个会话都没有开机动画。
+ *
  * @param ctx - 带 webServer 的宿主上下文。
  * @param config - 行配置（部署默认值）。
  */
-export function apply(ctx, config) {
+export async function apply(ctx, config) {
   const defaults = normalizeConfig(config, ctx.logger)
-  /** 服务与 API handler 都是异步就绪的，先占位，注入行/路由每次调用时再取。 */
-  const ref = { service: undefined, api: undefined }
-  const ready = createBootAnimationService({
-    defaults,
-    logger: ctx.logger,
-    // 宿主在启动时 provide 了 dshHomePath；拿不到就让 store 走 $DSH_HOME/~/.dsh 兜底。
-    home: typeof ctx.get === 'function' ? ctx.get('dshHomePath') : undefined,
-  })
+  let service
+  try {
+    service = await createBootAnimationService({
+      defaults,
+      logger: ctx.logger,
+      // 宿主在启动时 provide 了 dshHomePath；拿不到就让 store 走 $DSH_HOME/~/.dsh 兜底。
+      home: typeof ctx.get === 'function' ? ctx.get('dshHomePath') : undefined,
+    })
+  } catch (error) {
+    // 不往外抛：插件起不来只是没有开机动画，不能连带 DSH 启动失败。
+    ctx.logger?.error?.(`[dsh-wallport] 初始化失败：${error?.stack ?? error}`)
+    return
+  }
+  const api = createApiHandler(service, { authorize: (req) => authorizeRequest(ctx, req) })
 
   // 1) 启动页面注入：renderIndex 每次都会 emit，所以拿到的永远是当前设置。
+  //    这里出错只会让本次启动没有动画，绝不能把 DSH 的 index 渲染 / 桌面启动带崩。
   ctx.effect(
     () =>
       ctx.on('webserver/index-inject', (table) => {
-        if (!Array.isArray(table) || ref.service === undefined) return
-        table.push(...ref.service.injectionRows())
+        if (!Array.isArray(table)) return
+        try {
+          table.push(...service.injectionRows())
+        } catch (error) {
+          ctx.logger?.warn?.(`[dsh-wallport] 生成注入行失败，本次不播放开机动画：${error?.message ?? error}`)
+        }
       }),
     'dsh-wallport: index injection',
   )
 
   // 2) HTTP 路由：设置页读写状态、预览文档。
   ctx.effect(
-    () =>
-      ctx.webServer.register({
-        kind: 'prefix',
-        path: ROUTE_PREFIX,
-        handler: async (req, res) => {
-          if (ref.api === undefined) {
-            res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' })
-            res.end('{"error":"dsh-wallport 正在初始化"}\n')
-            return
-          }
-          await ref.api(req, res)
-        },
-      }),
+    () => ctx.webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: api }),
     'dsh-wallport: http route',
   )
 
-  ready
-    .then((service) => {
-      ref.service = service
-      ref.api = createApiHandler(service)
-      const snapshot = service.snapshot()
-      ctx.logger?.info?.(
-        `[dsh-wallport] ${DISPLAY_NAME} 就绪：模板 ${snapshot.templates.length} 个，当前「${snapshot.active}」，` +
-          `${snapshot.enabled ? '已启用' : '已关闭'}，状态目录 ${service.store.baseDir}`,
-      )
+  const snapshot = service.snapshot()
+  ctx.logger?.info?.(
+    `[dsh-wallport] ${DISPLAY_NAME} 就绪：模板 ${snapshot.templates.length} 个，当前「${snapshot.active}」，` +
+      `${snapshot.enabled ? '已启用' : '已关闭'}，状态目录 ${service.store.baseDir}`,
+  )
 
-      // 3) Agent 工具（可选依赖：profile 没有 tools 服务时自动跳过）。
-      ctx.inject(['tools'], (toolCtx) => {
-        toolCtx.effect(
-          () => {
-            let disposed = false
-            try {
-              const count = registerTools(toolCtx, service)
-              if (disposed) return () => {}
-              toolCtx.logger?.info?.(`[dsh-wallport] 工具注册完成：${count} 个`)
-            } catch (error) {
-              toolCtx.logger?.warn?.(`[dsh-wallport] 工具注册失败：${error?.message ?? error}`)
-            }
-            return () => {
-              disposed = true
-            }
-          },
-          'dsh-wallport: agent tools',
-        )
-      })
-    })
-    .catch((error) => {
-      ctx.logger?.error?.(`[dsh-wallport] 初始化失败：${error?.stack ?? error}`)
-    })
+  // 3) Agent 工具（可选依赖：profile 没有 tools 服务时自动跳过）。
+  //    不要 await 这个 fiber：没有 tools 服务时它会一直等，插件就永远激活不了。
+  ctx.inject(['tools'], (toolCtx) => {
+    toolCtx.effect(
+      () => {
+        let disposed = false
+        try {
+          const count = registerTools(toolCtx, service)
+          if (disposed) return () => {}
+          toolCtx.logger?.info?.(`[dsh-wallport] 工具注册完成：${count} 个`)
+        } catch (error) {
+          toolCtx.logger?.warn?.(`[dsh-wallport] 工具注册失败：${error?.message ?? error}`)
+        }
+        return () => {
+          disposed = true
+        }
+      },
+      'dsh-wallport: agent tools',
+    )
+  })
 }

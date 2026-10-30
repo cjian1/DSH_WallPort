@@ -12,7 +12,7 @@
  * @deepseek-ai/dsh-tools 的产物一致），所以插件不依赖任何宿主包也能注册工具。
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -40,10 +40,42 @@ const TEMPLATE_DOC_CONTRACT = [
   '5) 时长由插件统一控制（默认最长 12 秒），动画自己循环播放即可，不需要自己结束。',
 ].join('\n')
 
-const OUTPUT_OK = {
-  type: 'object',
-  additionalProperties: true,
-  properties: { ok: { type: 'boolean' } },
+/** 导出的预览里一定有的标记（预览模拟器的函数名），用来认出「我们自己导出过的预览」。 */
+const PREVIEW_MARKER = 'bootPreviewSimulator'
+
+/** 文件开头是否带着预览标记（只读前 64 KiB：桥接与模拟器脚本紧跟在 <head> 后面）。 */
+function looksLikePreview(path) {
+  let fd
+  try {
+    fd = openSync(path, 'r')
+    const head = Buffer.alloc(64 * 1024)
+    const bytes = readSync(fd, head, 0, head.length, 0)
+    return head.subarray(0, bytes).toString('utf8').includes(PREVIEW_MARKER)
+  } catch {
+    return false
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+}
+
+/**
+ * 预览导出到哪里。
+ *
+ * 这个工具会把模板内容（AI 写的，可以是任意文本）写进文件，所以落点要收紧，
+ * 免得它变成一个绕过 DSH 写文件审批的通道（比如把内容写进 ~/.zshrc）：
+ *   - 只写 .html / .htm；
+ *   - 相对路径相对插件的 previews/ 目录（而不是宿主进程的工作目录）；
+ *   - 目标已存在时必须是之前导出的预览，否则拒绝覆盖。
+ */
+function previewTarget(service, id, requested) {
+  const dir = join(service.store.baseDir, 'previews')
+  if (requested === undefined || requested === '') return join(dir, `${id}.html`)
+  const target = resolve(dir, String(requested))
+  if (!/\.html?$/i.test(target)) throw new Error(`预览只能导出成 .html 文件：${target}`)
+  if (existsSync(target) && !looksLikePreview(target)) {
+    throw new Error(`${target} 已存在且不是开机动画预览，拒绝覆盖（换一个路径，或省略 path 用默认位置）`)
+  }
+  return target
 }
 
 function templateSummary(template) {
@@ -200,7 +232,7 @@ export function registerTools(ctx, service) {
         id: saved.id,
         name: textOf(saved.name, 'zh'),
         bytes: Buffer.byteLength(saved.document, 'utf8'),
-        active: service.snapshot().active === saved.id,
+        active: service.activeId() === saved.id,
         directory: service.store.templatesDir,
       })
     },
@@ -270,7 +302,9 @@ export function registerTools(ctx, service) {
         id: { type: 'string', description: '模板 id，省略则导出当前生效的模板。' },
         path: {
           type: 'string',
-          description: '导出路径；省略则写到插件数据目录的 previews/ 下。相对路径按宿主进程工作目录解析。',
+          description:
+            '导出路径（必须以 .html 结尾）；省略则写到插件数据目录的 previews/<id>.html。' +
+            '相对路径相对 previews/ 目录；目标已存在且不是之前导出的预览时会拒绝覆盖。',
         },
       },
     },
@@ -294,12 +328,12 @@ export function registerTools(ctx, service) {
       ],
     },
     execute(args) {
-      const id = args.id === undefined || args.id === '' ? service.snapshot().active : String(args.id)
+      const requested = args.id === undefined || args.id === '' ? service.activeId() : String(args.id)
+      const template = service.findTemplate(requested)
+      if (template === undefined) throw new Error(`模板不存在：${requested}`)
+      const id = template.id
       const document = service.previewDocument(id, { loop: true })
-      const target =
-        args.path === undefined || args.path === ''
-          ? join(service.store.baseDir, 'previews', `${id}.html`)
-          : resolve(process.cwd(), String(args.path))
+      const target = previewTarget(service, id, args.path)
       mkdirSync(dirname(target), { recursive: true })
       writeFileSync(target, document, 'utf8')
       return Promise.resolve({
@@ -319,7 +353,9 @@ export function registerTools(ctx, service) {
 
   const removeTool = defineTool({
     name: TOOL_NAMES.remove,
-    description: '删除一个自定义开机动画模板（内置模板不可删除）。删除后如果它正在生效，会自动切回默认的内置模板。',
+    description:
+      '删除一个自定义开机动画模板（内置模板不可删除）。删除后如果它正在生效，会自动切回默认的内置模板；' +
+      '如果删的是占用了内置 id 的同名自定义模板，则恢复成内置版本。',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -349,7 +385,7 @@ export function registerTools(ctx, service) {
     execute(args) {
       const id = String(args.id)
       const existed = service.removeTemplate(id)
-      return Promise.resolve({ id, existed, active: service.snapshot().active })
+      return Promise.resolve({ id, existed, active: service.activeId() })
     },
     presentCall: (args) => ({ card: 'generic', title: `删除开机动画模板：${args.id}`, kind: 'other', rawInput: args }),
   })
